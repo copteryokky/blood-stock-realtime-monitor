@@ -1,8 +1,7 @@
 import os
 from datetime import datetime
-
-import altair as alt
 import pandas as pd
+import altair as alt
 import streamlit as st
 from streamlit.components.v1 import html as st_html  # ใช้ component html สำหรับ SVG
 
@@ -10,21 +9,13 @@ from streamlit.components.v1 import html as st_html  # ใช้ component html 
 try:
     from streamlit_autorefresh import st_autorefresh
 except Exception:
-    def st_autorefresh(*args, **kwargs):
-        return None
+    def st_autorefresh(*args, **kwargs): return None
 
-from db import (
-    init_db,
-    get_all_status,
-    get_stock_by_blood,
-    adjust_stock,
-    get_transactions,
-)
+from db import init_db, get_all_status, get_stock_by_blood, adjust_stock, get_transactions
 
 # ===== PAGE CONFIG & THEME =====
 st.set_page_config(page_title="Blood Stock Real-time Monitor", page_icon="🩸", layout="wide")
-st.markdown(
-    """
+st.markdown("""
 <style>
 .block-container{padding-top:1.2rem;}
 h1,h2,h3{letter-spacing:.2px}
@@ -32,14 +23,12 @@ h1,h2,h3{letter-spacing:.2px}
 .legend-dot{width:.7rem;height:.7rem;border-radius:999px;display:inline-block}
 .stButton>button{border-radius:12px;padding:.55rem 1rem;font-weight:600}
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
 # ===== CONFIG =====
-BAG_MAX = 20        # เต็มคลังต่อกรุ๊ป
-CRITICAL_MAX = 4    # 0–4 แดง
-YELLOW_MAX = 15     # 5–15 เหลือง (≥16 เขียว)
+BAG_MAX      = 20    # เต็มคลังต่อกรุ๊ป
+CRITICAL_MAX = 4     # 0–4 แดง
+YELLOW_MAX   = 15    # 5–15 เหลือง, >=16 เขียว
 
 # ===== Helpers =====
 def compute_bag(total: int):
@@ -53,68 +42,63 @@ def compute_bag(total: int):
     pct = max(0, min(100, int(round(100 * min(t, BAG_MAX) / BAG_MAX))))
     return status, label, pct
 
-
 def bag_color(status: str) -> str:
-    return {"green": "#22c55e", "yellow": "#f59e0b", "red": "#ef4444"}[status]
+    return {"green":"#22c55e", "yellow":"#f59e0b", "red":"#ef4444"}[status]
 
-
-def norm_pin(s: str) -> str:
-    trans = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
+def norm_pin(s:str)->str:
+    trans = str.maketrans("๐๑๒๓๔๕๖๗๘๙","0123456789")
     return (s or "").translate(trans).strip()
 
-
-# ===== SVG Blood Bag (สมจริง + กราฟภายในโชว์ตอน hover + ชื่อชนิดเลือด) =====
+# ===== SVG Blood Bag (ทรงเหมือนไอคอน + ผิวน้ำโค้ง + กราฟในถุง (hover)) =====
 def bag_svg_with_distribution(blood_type: str, total: int, dist: dict) -> str:
     status, label, pct = compute_bag(total)
     fill = bag_color(status)
 
-    # พื้นที่ด้านในของถุง (สำหรับน้ำ/กราฟ)
-    INNER_LEFT, INNER_RIGHT = 36.0, 114.0
-    INNER_TOP, INNER_BOTTOM = 30.0, 186.0
-    INNER_W = INNER_RIGHT - INNER_LEFT          # 78
-    INNER_H = INNER_BOTTOM - INNER_TOP          # 156
+    # โซนภายในถุง (ไว้คำนวณผิวน้ำ)
+    inner_h = 148.0
+    inner_y0 = 40.0
+    water_h = inner_h * pct / 100.0
+    water_y = inner_y0 + (inner_h - water_h)
 
-    # ระดับผิวน้ำ (อิง 0..20) -> 0..INNER_H
-    water_h = INNER_H * max(0, min(BAG_MAX, min(total, BAG_MAX))) / BAG_MAX
-    water_y = INNER_BOTTOM - water_h
+    # กราฟย่อย 4 ชนิด
+    ORDER  = ["PRC", "Platelets", "Plasma", "Cryo"]
+    COLORS = {"PRC":"#1f77b4", "Platelets":"#ff7f0e", "Plasma":"#2ca02c", "Cryo":"#d62728"}
+    vals   = [max(0, int(dist.get(k, 0))) for k in ORDER]
+    bar_hs = [(min(v, BAG_MAX)/BAG_MAX) * water_h for v in vals]
 
-    # กราฟย่อยในถุง
-    ORDER = ["PRC", "Platelets", "Plasma", "Cryo"]
-    COLORS = {
-        "PRC": "#1f77b4",       # ฟ้า
-        "Platelets": "#ff7f0e", # ส้ม
-        "Plasma": "#2ca02c",    # เขียว
-        "Cryo": "#d62728",      # แดง
-    }
-    vals = [max(0, int(dist.get(k, 0))) for k in ORDER]
-    bar_heights = [(min(v, BAG_MAX) / BAG_MAX) * water_h for v in vals]
-
-    gap = 6.0
-    bar_w = (INNER_W - gap * 3) / 4.0
-    bars, labels = [], []
-    for i, (k, h) in enumerate(zip(ORDER, bar_heights)):
-        x = INNER_LEFT + i * (bar_w + gap)
-        y = water_y + (water_h - h)  # ดันจากก้นน้ำขึ้นมา
-        color = COLORS[k]
+    gap = 6
+    inner_w = 84.0
+    bar_w = (inner_w - gap*3)/4.0
+    x0 = 33.0
+    bars, labels_svg = [], []
+    for i, (k, h) in enumerate(zip(ORDER, bar_hs)):
+        x = x0 + i*(bar_w + gap)
+        y = water_y + (water_h - h)
         bars.append(
-            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" rx="4" fill="{color}"></rect>'
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" rx="4" fill="{COLORS[k]}" />'
         )
-        # ป้ายชื่อชนิดเลือดบนแท่ง (อ่านง่ายเวลา hover)
-        ty = max(y + 12, water_y + 12)
-        labels.append(
-            f'<text x="{x + bar_w/2:.1f}" y="{ty:.1f}" text-anchor="middle" '
-            f'font-size="9" font-weight="600" fill="white">{k}</text>'
+        labels_svg.append(
+            f'<text x="{x + bar_w/2:.1f}" y="{max(y+12, water_y+12):.1f}" '
+            f'text-anchor="middle" font-size="9" font-weight="700" fill="#fff">{k}</text>'
         )
 
     gid = f"g_{blood_type}"
 
+    # ผิวน้ำแบบคลื่นให้อารมณ์ของเหลวจริง
+    wave_amp = 5 + 6*(pct/100)  # 5–11
+    wave_path = (
+        f"M28,{water_y:.1f} "
+        f"Q55,{water_y - wave_amp:.1f} 82,{water_y:.1f} "
+        f"Q109,{water_y + wave_amp:.1f} 136,{water_y:.1f} "
+        f"L136,188 28,188 Z"
+    )
+
     return f"""
 <div>
   <style>
-    .bag-wrap{{display:flex;flex-direction:column;align-items:center;gap:8px;
-               font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial}}
+    .bag-wrap{{display:flex;flex-direction:column;align-items:center;gap:8px;font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial}}
     .bag{{transition:transform .18s ease, filter .18s ease}}
-    .bag:hover{{transform:translateY(-2px); filter:drop-shadow(0 8px 24px rgba(0,0,0,.12));}}
+    .bag:hover{{transform:translateY(-2px); filter:drop-shadow(0 10px 22px rgba(0,0,0,.12));}}
     .dist-group{{opacity:0; transition:opacity .2s ease;}}
     .bag:hover .dist-group{{opacity:1;}}
     .bag-caption{{text-align:center; line-height:1.2}}
@@ -123,67 +107,72 @@ def bag_svg_with_distribution(blood_type: str, total: int, dist: dict) -> str:
   </style>
 
   <div class="bag-wrap">
-    <svg class="bag" width="170" height="220" viewBox="0 0 150 200" xmlns="http://www.w3.org/2000/svg">
+    <svg class="bag" width="170" height="230" viewBox="0 0 164 200" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <filter id="shadow_{gid}" x="-20%" y="-20%" width="160%" height="160%">
-          <feDropShadow dx="0" dy="6" stdDeviation="7" flood-opacity="0.18"/>
-        </filter>
-        <clipPath id="clip_{gid}">
-          <!-- โครงด้านในของถุง (พื้นที่น้ำ/กราฟ) -->
-          <path d="M35,25 C35,13 45,7 57,7 L93,7 C105,7 115,13 115,25 L115,160
-                   C115,176 104,186 88,188 L62,188 C46,186 35,176 35,160 Z"/>
+        <!-- พื้นที่ภายในถุงสำหรับ clip -->
+        <clipPath id="clip-{gid}">
+          <path d="M28,40
+                   C28,25 40,16 56,16
+                   L108,16
+                   C124,16 136,25 136,40
+                   L136,166
+                   C136,182 123,192 106,194
+                   L58,194
+                   C41,192 28,182 28,166 Z"/>
         </clipPath>
-        <linearGradient id="liquid_{gid}" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id="liquid-{gid}" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%"  stop-color="{fill}" stop-opacity=".96"/>
           <stop offset="100%" stop-color="{fill}" stop-opacity=".86"/>
         </linearGradient>
-        <linearGradient id="gloss_{gid}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="rgba(255,255,255,.65)"/>
+        <linearGradient id="gloss-{gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(255,255,255,.75)"/>
           <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
         </linearGradient>
+        <filter id="shadow-{gid}" x="-20%" y="-20%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="6" stdDeviation="6" flood-opacity=".2"/>
+        </filter>
       </defs>
 
-      <!-- หูถุง/คอท่อ -->
-      <rect x="70" y="0" width="10" height="10" rx="5" fill="#9ca3af"/>
-      <rect x="68" y="10" width="14" height="6" rx="3" fill="#cbd5e1"/>
-      <path d="M75,16 C75,22 75,22 75,22" stroke="#cbd5e1" stroke-width="4" stroke-linecap="round"/>
+      <!-- หูหิ้วกลม -->
+      <circle cx="82" cy="8" r="7.5" fill="#eef2ff" stroke="#dbe0ea" stroke-width="3"/>
+      <rect x="75.5" y="12" width="13" height="8" rx="3" fill="#e5e7eb"/>
 
-      <!-- สเกลด้านซ้ายให้สมจริง -->
-      <g opacity=".35">
-        <line x1="28" x2="28" y1="28" y2="184" stroke="#9ca3af" stroke-width="1"/>
-        {"".join([f'<line x1="26" x2="30" y1="{y}" y2="{y}" stroke="#9ca3af" stroke-width="{2 if i%5==0 else 1}"/>'
-                 for i,y in enumerate(range(184, 27, -8))])}
-      </g>
+      <!-- ตัวถุง (ทรงมน) -->
+      <g filter="url(#shadow-{gid})">
+        <path d="
+          M20,34
+          C20,18 34,8 54,8
+          L110,8
+          C130,8 144,18 144,34
+          L144,168
+          C144,187 128,198 108,200
+          L56,200
+          C36,198 20,187 20,168 Z"
+          fill="#ffffff" stroke="#e5e7eb" stroke-width="3"/>
 
-      <!-- ตัวถุง -->
-      <g filter="url(#shadow_{gid})">
-        <path d="M35,25 C35,13 45,7 57,7 L93,7 C105,7 115,13 115,25 L115,160
-                 C115,176 104,186 88,188 L62,188 C46,186 35,176 35,160 Z"
-              fill="#ffffff" stroke="#e5e7eb" stroke-width="3"/>
+        <!-- ไฮไลต์เงาวาว -->
+        <rect x="36" y="20" width="10" height="170" fill="url(#gloss-{gid})" opacity=".7" clip-path="url(#clip-{gid})"/>
 
-        <!-- ของเหลวในถุง -->
-        <rect x="{INNER_LEFT:.1f}" y="{water_y:.1f}" width="{INNER_W:.1f}" height="{water_h:.1f}"
-              fill="url(#liquid_{gid})" clip-path="url(#clip_{gid})"/>
-
-        <!-- กราฟย่อย + ป้ายชื่อ (แสดงเฉพาะตอน hover) -->
-        <g class="dist-group" clip-path="url(#clip_{gid})">
-          {"".join(bars)}
-          {"".join(labels)}
+        <!-- ของเหลว + ผิวน้ำ -->
+        <g clip-path="url(#clip-{gid})">
+          <path d="{wave_path}" fill="url(#liquid-{gid})"/>
+          <!-- กราฟย่อย แสดงเมื่อ hover -->
+          <g class="dist-group">
+            {"".join(bars)}
+            {"".join(labels_svg)}
+          </g>
         </g>
-
-        <!-- ผิวน้ำโค้ง + ไฮไลต์ -->
-        <path d="M{INNER_LEFT:.1f},160 Q75,174 {INNER_RIGHT:.1f},160" fill="none" stroke="rgba(0,0,0,0.10)"/>
-        <rect x="{INNER_LEFT+5:.1f}" y="21" width="9" height="165" fill="url(#gloss_{gid})" opacity=".55" clip-path="url(#clip_{gid})"/>
       </g>
 
-      <!-- ป้าย 20 max -->
+      <!-- ป้าย max -->
       <g>
-        <rect x="82" y="17" rx="10" ry="10" width="52" height="22" fill="#ffffff" stroke="#e5e7eb"/>
-        <text x="108" y="32" text-anchor="middle" font-size="12" fill="#374151">{BAG_MAX} max</text>
+        <rect x="94" y="22" rx="10" ry="10" width="54" height="22" fill="#ffffff" stroke="#e5e7eb"/>
+        <text x="121" y="38" text-anchor="middle" font-size="12" fill="#374151">{BAG_MAX} max</text>
       </g>
 
-      <!-- ตัวอักษรกรุ๊ป -->
-      <text x="75" y="125" text-anchor="middle" font-weight="bold" font-size="28" fill="#ffffff">{blood_type}</text>
+      <!-- ชื่อกรุ๊ปเลือด (ขาวมีเส้นขอบอ่อน) -->
+      <text x="82" y="120" text-anchor="middle" font-size="32" font-weight="800"
+            fill="#ffffff" stroke="#e5e7eb" stroke-width="3">{blood_type}</text>
     </svg>
 
     <div class="bag-caption">
@@ -194,7 +183,6 @@ def bag_svg_with_distribution(blood_type: str, total: int, dist: dict) -> str:
   </div>
 </div>
 """
-
 
 # ===== Init DB =====
 if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
@@ -219,7 +207,7 @@ with st.sidebar:
             st.error("รหัสไม่ถูกต้อง")
 
 # ===== HEADER =====
-left, right = st.columns([3, 1])
+left, right = st.columns([3,1])
 with left:
     st.title("Blood Stock Real-time Monitor")
     st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
@@ -245,15 +233,12 @@ selected = st.session_state.get("selected_bt")
 for i, bt in enumerate(blood_types):
     info = next(d for d in overview if d["blood_type"] == bt)
     total = int(info.get("total", 0))
-
-    # distribution เพื่อวาดในถุง
     dist_list = get_stock_by_blood(bt)  # [{product_type, units}]
-    dist = {d["product_type"]: int(d["units"]) for d in dist_list}
+    dist = { d["product_type"]: int(d["units"]) for d in dist_list }
 
     with cols[i]:
         st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
-        # ใช้ st_html เพื่อ render SVG แยก scope ป้องกัน error React
-        st_html(bag_svg_with_distribution(bt, total, dist), height=270, scrolling=False)
+        st_html(bag_svg_with_distribution(bt, total, dist), height=260, scrolling=False)
         if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
             st.session_state["selected_bt"] = bt
             selected = bt
@@ -268,33 +253,28 @@ else:
 
     total_selected = next(d for d in overview if d["blood_type"] == selected)["total"]
     dist_selected_list = get_stock_by_blood(selected)
-    dist_selected = {d["product_type"]: int(d["units"]) for d in dist_selected_list}
+    dist_selected = { d["product_type"]: int(d["units"]) for d in dist_selected_list }
 
-    st_html(bag_svg_with_distribution(selected, int(total_selected), dist_selected), height=270, scrolling=False)
+    st_html(bag_svg_with_distribution(selected, int(total_selected), dist_selected), height=260, scrolling=False)
 
     df = pd.DataFrame(dist_selected_list)
     if df.empty:
         st.warning("ยังไม่มีข้อมูลในคลังสำหรับกรุ๊ปนี้")
     else:
-        chart = (
-            alt.Chart(df)
-            .mark_bar()
-            .encode(
-                x=alt.X("product_type:N", title="ประเภทผลิตภัณฑ์"),
-                y=alt.Y("units:Q", title="จำนวนหน่วย (unit)", scale=alt.Scale(domainMin=0, domainMax=BAG_MAX)),
-                tooltip=["product_type", "units"],
-            )
-            .properties(height=320)
-        )
+        chart = alt.Chart(df).mark_bar().encode(
+            x=alt.X('product_type:N', title='ประเภทผลิตภัณฑ์'),
+            y=alt.Y('units:Q', title='จำนวนหน่วย (unit)', scale=alt.Scale(domainMin=0, domainMax=BAG_MAX)),
+            tooltip=['product_type','units']
+        ).properties(height=320)
         st.altair_chart(chart, use_container_width=True)
         st.dataframe(df, use_container_width=True, hide_index=True)
 
     # ===== Update Mode =====
     if admin_mode and pin_ok:
         st.markdown("#### ปรับปรุงคลัง")
-        c1, c2, c3 = st.columns([1, 1, 2])
+        c1, c2, c3 = st.columns([1,1,2])
         with c1:
-            product = st.selectbox("ประเภทผลิตภัณฑ์", ["PRC", "Platelets", "Plasma", "Cryo"])
+            product = st.selectbox("ประเภทผลิตภัณฑ์", ["PRC","Platelets","Plasma","Cryo"])
         with c2:
             qty = int(st.number_input("จำนวน (หน่วย)", min_value=1, max_value=1000, value=1, step=1))
         with c3:
@@ -306,7 +286,6 @@ else:
         b1, b2 = st.columns(2)
         with b1:
             if st.button("➕ นำเข้าเข้าคลัง", use_container_width=True):
-                # จำกัดรวมไม่เกิน 20
                 space = max(0, BAG_MAX - min(current_total, BAG_MAX))
                 add = min(qty, space)
                 if add <= 0:
@@ -320,7 +299,7 @@ else:
 
         with b2:
             if st.button("➖ เบิกออกจากคลัง", use_container_width=True):
-                take = min(qty, current_by_product)  # ไม่ให้ชนิดนั้นติดลบ
+                take = min(qty, current_by_product)
                 if take <= 0:
                     st.warning(f"ไม่มี {product} ในกรุ๊ป {selected} เพียงพอสำหรับการเบิก")
                 else:
