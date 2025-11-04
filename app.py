@@ -11,7 +11,7 @@ try:
 except Exception:
     def st_autorefresh(*args, **kwargs): return None
 
-from db import init_db, get_all_status, get_stock_by_blood, adjust_stock, get_transactions
+from db import init_db, get_all_status, get_stock_by_blood, adjust_stock  # ตัด get_transactions ออกตามที่ขอ
 
 # ===== PAGE CONFIG & THEME =====
 st.set_page_config(page_title="Blood Stock Real-time Monitor", page_icon="🩸", layout="wide")
@@ -26,7 +26,7 @@ h1,h2,h3{letter-spacing:.2px}
 """, unsafe_allow_html=True)
 
 # ===== CONFIG =====
-BAG_MAX      = 20    # ความจุสูงสุดถุง (ใช้คำนวณระดับของเหลว)
+BAG_MAX      = 20    # ความจุสูงสุดของของเหลวในถุง (ใช้คำนวณระดับ)
 CRITICAL_MAX = 4     # 0–4 แดง
 YELLOW_MAX   = 15    # 5–15 เหลือง, >=16 เขียว
 
@@ -54,12 +54,22 @@ RENAME_TO_UI = {
     "Plasma": "FFP",      # Plasma -> FFP
     "Platelets": "PC",    # Platelets -> PC
 }
-ALL_PRODUCTS_UI = ["LPRC", "PRC", "FFP", "Cryo", "PC"]  # ลำดับแสดงผล
+# UI order
+ALL_PRODUCTS_UI = ["LPRC", "PRC", "FFP", "Cryo", "PC"]
+
+# UI -> DB (ใช้ตอนปรับสต๊อก)
+UI_TO_DB = {
+    "LPRC": "LPRC",
+    "PRC": "PRC",
+    "FFP": "Plasma",
+    "PC": "Platelets",
+    # "Cryo": "Cryo"  # Cryo คือค่ารวม ไม่ให้แก้ตรง ๆ ที่ฟอร์ม
+}
 
 def normalize_products(rows):
     """
     rows: [{'product_type':..., 'units':...}]
-    -> dict ชื่อ UI และเติม 0 ให้ครบทุกชนิด
+    -> dict (ชื่อ UI) และเติม 0 ให้ครบทุกชนิด
        โดย 'Cryo' = ผลรวม LPRC+PRC+FFP+PC (ยอดรวมของกรุ๊ป)
     """
     d = {name: 0 for name in ALL_PRODUCTS_UI}
@@ -108,7 +118,6 @@ def bag_svg_with_distribution(blood_type: str, total: int, dist: dict) -> str:
     .bag:hover{{transform:translateY(-2px); filter:drop-shadow(0 10px 22px rgba(0,0,0,.12));}}
     .bag-caption{{text-align:center; line-height:1.3; margin-top:2px}}
     .bag-caption .total{{font-weight:800; font-size:16px}}
-    .bag-caption .tip{{font-size:10px;color:#6b7280}}
   </style>
 
   <div class="bag-wrap">
@@ -155,7 +164,7 @@ def bag_svg_with_distribution(blood_type: str, total: int, dist: dict) -> str:
               fill="#ffffff" stroke="#dc2626" stroke-width="3" filter="url(#rough-{gid})"/>
       </g>
 
-      <!-- ของเหลว (ไม่มีกราฟในถุงแล้ว) -->
+      <!-- ของเหลว (ไม่มีกราฟในถุง) -->
       <g clip-path="url(#clip-{gid})">
         <path d="{wave_path}" fill="url(#liquid-{gid})"/>
       </g>
@@ -229,8 +238,8 @@ selected = st.session_state.get("selected_bt")
 
 for i, bt in enumerate(blood_types):
     info = next(d for d in overview if d["blood_type"] == bt)
-    total = int(info.get("total", 0))  # ใช้คำนวณระดับของเหลว
-    dist = normalize_products(get_stock_by_blood(bt))  # dict พร้อม Cryo = รวม
+    total = int(info.get("total", 0))                      # ใช้คำนวณระดับของเหลว
+    dist = normalize_products(get_stock_by_blood(bt))      # dict พร้อม Cryo = รวม
 
     with cols[i]:
         st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
@@ -243,7 +252,7 @@ st.divider()
 
 # ===== DETAIL =====
 if not selected:
-    st.info("กดเลือกรายละเอียดที่กรุ๊ปโลหิตด้านบน เพื่อดูสต็อกตามประเภทผลิตภัณฑ์และทำรายการเบิก/นำเข้า")
+    st.info("กดเลือกรายละเอียดที่กรุ๊ปโลหิตด้านบน เพื่อดูสต๊อกและทำรายการนำเข้า/เบิก")
 else:
     st.subheader(f"รายละเอียดกรุ๊ป {selected}")
 
@@ -256,18 +265,22 @@ else:
     df = pd.DataFrame([{"product_type":k, "units":v} for k,v in dist_selected.items()])
     df = df.set_index("product_type").loc[ALL_PRODUCTS_UI].reset_index()
 
-    traffic_color = alt.condition(
+    # สเกลแกน Y ตามค่าจริง (ไม่ล็อค 20) ให้หายอาการกราฟหาย ๆ โผล่ ๆ
+    ymax = max(10, int(df["units"].max() * 1.2))
+
+    traffic_color_cond = alt.condition(
         alt.datum.units <= CRITICAL_MAX, alt.value("#ef4444"),
         alt.condition(alt.datum.units <= YELLOW_MAX, alt.value("#f59e0b"), alt.value("#22c55e"))
     )
 
     chart = alt.Chart(df).mark_bar().encode(
         x=alt.X('product_type:N', title='ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวม, PC)'),
-        y=alt.Y('units:Q', title='จำนวนหน่วย (unit)', scale=alt.Scale(domainMin=0, domainMax=BAG_MAX)),
-        color=traffic_color,
+        y=alt.Y('units:Q', title='จำนวนหน่วย (unit)', scale=alt.Scale(domainMin=0, domainMax=ymax)),
+        color=traffic_color_cond,
         tooltip=['product_type','units']
     ).properties(height=340)
     st.altair_chart(chart, use_container_width=True)
+
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     # ===== Update Mode =====
@@ -275,24 +288,30 @@ else:
         st.markdown("#### ปรับปรุงคลัง")
         c1, c2, c3 = st.columns([1,1,2])
         with c1:
-            product = st.selectbox("ประเภทผลิตภัณฑ์", ["LPRC","PRC","FFP","PC"])  # Cryo เป็นยอดรวม ไม่แก้ตรง ๆ
+            # Cryo เป็นยอดรวม ไม่แก้ตรง ๆ
+            product_ui = st.selectbox("ประเภทผลิตภัณฑ์", ["LPRC","PRC","FFP","PC"])
         with c2:
             qty = int(st.number_input("จำนวน (หน่วย)", min_value=1, max_value=1000, value=1, step=1))
         with c3:
             note = st.text_input("หมายเหตุ", placeholder="เหตุผลการทำรายการ เช่น นำเข้า/เบิกให้ผู้ป่วย/ทดแทนการหมดอายุ")
 
+        # ชื่อที่ไป DB
+        product_db = UI_TO_DB[product_ui]
+
+        # สถานะปัจจุบัน
         current_total = int(total_selected)
-        current_by_product = int(dist_selected.get(product, 0))
+        current_by_product = int(dist_selected.get(product_ui, 0))
 
         b1, b2 = st.columns(2)
         with b1:
             if st.button("➕ นำเข้าเข้าคลัง", use_container_width=True):
-                space = max(0, BAG_MAX - min(current_total, BAG_MAX))   # จำกัดรวมไม่เกิน 20
+                # จำกัดรวมไม่เกิน 20 ต่อกรุ๊ป (ของเหลวในถุง)
+                space = max(0, BAG_MAX - min(current_total, BAG_MAX))
                 add = min(qty, space)
                 if add <= 0:
                     st.warning("เต็มคลังแล้ว (20/20) – ไม่สามารถนำเข้าเพิ่มได้")
                 else:
-                    adjust_stock(selected, product, add, actor="admin", note=note or "inbound")
+                    adjust_stock(selected, product_db, add, actor="admin", note=note or "inbound")
                     if add < qty:
                         st.info(f"นำเข้าได้เพียง {add} หน่วย (จำกัดเต็มคลัง 20)")
                     st.toast("บันทึกการนำเข้าแล้ว", icon="✅")
@@ -302,9 +321,9 @@ else:
             if st.button("➖ เบิกออกจากคลัง", use_container_width=True):
                 take = min(qty, current_by_product)  # ไม่ให้ติดลบ
                 if take <= 0:
-                    st.warning(f"ไม่มี {product} ในกรุ๊ป {selected} เพียงพอสำหรับการเบิก")
+                    st.warning(f"ไม่มี {product_ui} ในกรุ๊ป {selected} เพียงพอสำหรับการเบิก")
                 else:
-                    adjust_stock(selected, product, -take, actor="admin", note=note or "outbound")
+                    adjust_stock(selected, product_db, -take, actor="admin", note=note or "outbound")
                     if take < qty:
                         st.info(f"ทำการเบิกได้เพียง {take} หน่วย (ตามยอดคงเหลือ)")
                     st.toast("บันทึกการเบิกออกแล้ว", icon="✅")
