@@ -1,3 +1,5 @@
+# app.py — Blood Stock Real-time Monitor (classic blood bag UI)
+
 import os
 from datetime import datetime
 import pandas as pd
@@ -9,11 +11,14 @@ from streamlit.components.v1 import html as st_html
 try:
     from streamlit_autorefresh import st_autorefresh
 except Exception:
-    def st_autorefresh(*args, **kwargs): return None
+    def st_autorefresh(*args, **kwargs):  # no-op on local/dev without package
+        return None
 
-from db import init_db, get_all_status, get_stock_by_blood, adjust_stock
+# ===== DB funcs (ของคุณ) =====
+from db import init_db, get_all_status, get_stock_by_blood, adjust_stock  #, get_transactions
 
-# ===== PAGE CONFIG & THEME =====
+
+# ===== PAGE CONFIG & BASE THEME =====
 st.set_page_config(page_title="Blood Stock Real-time Monitor", page_icon="🩸", layout="wide")
 st.markdown("""
 <style>
@@ -25,17 +30,15 @@ h1,h2,h3{letter-spacing:.2px}
 </style>
 """, unsafe_allow_html=True)
 
-# ===== CONFIG =====
-BAG_MAX      = 20    # ความจุสูงสุดในถุง (ใช้คุมระดับของเหลวเท่านั้น)
-CRITICAL_MAX = 4     # 0–4 แดง
-YELLOW_MAX   = 15    # 5–15 เหลือง, >=16 เขียว
 
-# ลำดับ/ชื่อผลิตภัณฑ์ที่เราต้องการให้โชว์
-ALL_PRODUCTS_UI = ["LPRC", "PRC", "FFP", "Cryo", "PC"]  # Cryo = รวมทั้งหมด
+# ===== CONFIG =====
+BAG_MAX      = 20    # เต็มคลังต่อกรุ๊ป (จำกัดตอนนำเข้า)
+CRITICAL_MAX = 4     # 0–4 = แดง
+YELLOW_MAX   = 15    # 5–15 = เหลือง  |  >=16 = เขียว
+
 
 # ===== Helpers =====
-def compute_bag(total: int):
-    """คำนวณสถานะ + เปอร์เซ็นต์ความสูงของของเหลว (อิง BAG_MAX)"""
+def compute_status(total: int):
     t = max(0, int(total))
     if t <= CRITICAL_MAX:
         status, label = "red", "วิกฤตใกล้หมด"
@@ -46,142 +49,105 @@ def compute_bag(total: int):
     pct = max(0, min(100, int(round(100 * min(t, BAG_MAX) / BAG_MAX))))
     return status, label, pct
 
-def bag_color(status: str) -> str:
+
+def traffic_color(status: str) -> str:
     return {"green":"#22c55e", "yellow":"#f59e0b", "red":"#ef4444"}[status]
 
-def norm_pin(s:str)->str:
-    trans = str.maketrans("๐๑๒๓๔๕๖๗๘๙","0123456789")
+
+def norm_pin(s: str) -> str:
+    trans = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
     return (s or "").translate(trans).strip()
 
-def normalize_products(rows):
-    """
-    รับรายการ [{product_type, units}] จาก DB
-    - เปลี่ยน Plasma -> FFP
-    - mapping Platelets -> PC
-    - เติม 0 ให้ชนิดที่ไม่มี
-    - คำนวณ Cryo = รวมทั้งหมดของกรุ๊ปนั้น
-    """
-    m = {"PRC":0, "LPRC":0, "FFP":0, "PC":0}
-    for r in rows:
-        p = (r.get("product_type") or "").strip()
-        u = int(r.get("units") or 0)
-        if p.lower() == "plasma":     # เปลี่ยนชื่อเป็น FFP
-            m["FFP"] += u
-        elif p.lower() == "platelets": # mapping -> PC
-            m["PC"] += u
-        elif p.upper() in m:
-            m[p.upper()] += u
-    total = sum(m.values())          # รวมทุกชนิด
-    m["Cryo"] = total                # Cryo = รวมทั้งหมด
-    # คืน dict ตามลำดับที่เราต้องการ
-    ordered = {k: m.get(k, 0) for k in ALL_PRODUCTS_UI}
-    return ordered
 
-def blood_type_text_color(bt: str) -> str:
-    """
-    สีตัวอักษรบนถุง:
-    A=เหลือง, B=ชมพู, O=ฟ้า, AB=ขาวพร้อมสโตรกเทาเข้ม
-    """
+def blood_letter_color(bt: str) -> str:
+    """สีตัวอักษรบนถุง: A=เหลือง, B=ชมพู, O=ฟ้า, AB=ขาวมีสโตรกเข้ม"""
     bt = bt.upper()
-    if bt == "A":   return "#facc15"   # yellow-400
-    if bt == "B":   return "#f472b6"   # pink-400
-    if bt == "O":   return "#60a5fa"   # blue-400
-    return "#ffffff"                   # AB = white (จะวาด stroke เพิ่มใน SVG)
+    if bt == "A":
+        return "#facc15"
+    if bt == "B":
+        return "#f472b6"
+    if bt == "O":
+        return "#60a5fa"
+    return "#ffffff"  # AB
 
-def bag_svg(blood_type: str, total: int) -> str:
+
+# ===== Classic Blood Bag (ไม่มีกราฟซ่อน) =====
+def bag_svg_classic(blood_type: str, total_units: int) -> str:
     """
-    วาดถุงเลือดแบบสมจริง: ขอบแดงเลอะๆ, ของเหลวไล่เฉด, ไม่มีกราฟซ่อนในถุง
-    แสดงจำนวนหน่วยเป็น "{total} unit" (ไม่แสดง /20)
+    ถุงเลือดสไตล์เดิม:
+    - ไม่มีแผนภูมิในถุง
+    - เส้นขอบถุงสีโทนแดงให้ดูเป็นถุงเลือด
+    - ตัวอักษรกรุ๊ป: A=เหลือง, B=ชมพู, O=ฟ้า, AB=ขาว (มี stroke เข้มให้ชัด)
     """
-    status, label, pct = compute_bag(total)
-    fill = bag_color(status)
-    # ระดับของเหลว
+    status, _label, pct = compute_status(total_units)
+    liquid = traffic_color(status)
+    textc = blood_letter_color(blood_type)
+    stroke_for_ab = 'stroke="#1f2937" stroke-width="2.2"' if blood_type.upper() == "AB" else ''
+
+    # ของเหลวในถุง
     water_h = 162 * pct / 100.0
     water_y = 182 - water_h
-    # สีตัวอักษรกรุ๊ป
-    text_color = blood_type_text_color(blood_type)
-    stroke_for_ab = 'stroke="#1f2937" stroke-width="2"' if blood_type.upper()=="AB" else ''
-
-    # เลอะเลือด: ใช้กราดิเอนต์ขอบแดง + feTurbulence เล็กน้อย
     gid = f"g_{blood_type}"
 
     return f"""
 <div style="display:flex;flex-direction:column;align-items:center;gap:8px;font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,Arial">
-  <svg width="170" height="220" viewBox="0 0 150 200" xmlns="http://www.w3.org/2000/svg">
+  <svg width="160" height="210" viewBox="0 0 140 190" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <filter id="shadow_{gid}" x="-20%" y="-20%" width="160%" height="160%">
-        <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#991b1b" flood-opacity="0.18"/>
+        <feDropShadow dx="0" dy="6" stdDeviation="7" flood-opacity="0.18"/>
       </filter>
       <clipPath id="clip_{gid}">
-        <path d="M35,25 C35,13 45,7 57,7 L93,7 C105,7 115,13 115,25 L115,160
-                 C115,176 104,186 88,188 L62,188 C46,186 35,176 35,160 Z"/>
+        <path d="M30,22 C30,12 40,6 50,6 L90,6 C100,6 110,12 110,22 L110,155
+                 C110,170 100,180 85,182 L45,182 C30,180 30,170 30,155 Z" />
       </clipPath>
       <linearGradient id="liquid_{gid}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%"  stop-color="{fill}" stop-opacity=".96"/>
-        <stop offset="100%" stop-color="{fill}" stop-opacity=".86"/>
+        <stop offset="0%"  stop-color="{liquid}" stop-opacity=".96"/>
+        <stop offset="100%" stop-color="{liquid}" stop-opacity=".86"/>
       </linearGradient>
-      <linearGradient id="edge_{gid}" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%"  stop-color="#fecaca"/>
-        <stop offset="60%" stop-color="#fca5a5"/>
-        <stop offset="100%" stop-color="#ef4444"/>
-      </linearGradient>
-      <filter id="smear_{gid}">
-        <feTurbulence baseFrequency="0.6" numOctaves="2" seed="3" type="fractalNoise" result="noise"/>
-        <feColorMatrix in="noise" type="saturate" values="0"/>
-        <feBlend mode="multiply" in2="SourceGraphic"/>
-      </filter>
     </defs>
 
-    <!-- คอถุง -->
-    <rect x="70" y="0" width="10" height="10" rx="5" fill="#9ca3af"/>
-    <rect x="68" y="10" width="14" height="6" rx="3" fill="#cbd5e1"/>
-    <path d="M75,16 C75,22 75,22 75,22" stroke="#cbd5e1" stroke-width="4" stroke-linecap="round"/>
+    <!-- หูหิ้ว -->
+    <path d="M55,8 L55,0 M85,8 L85,0" stroke="#9ca3af" stroke-width="6" stroke-linecap="round"/>
 
-    <!-- สเกลด้านซ้าย -->
-    <g opacity=".35">
-      <line x1="28" x2="28" y1="28" y2="184" stroke="#9ca3af" stroke-width="1"/>
-      {"".join([f'<line x1="26" x2="30" y1="{y}" y2="{y}" stroke="#9ca3af" stroke-width="{2 if i%5==0 else 1}"/>'
-               for i,y in enumerate(range(184, 27, -8))])}
-    </g>
-
-    <!-- ตัวถุง + ขอบแดงเลอะ -->
+    <!-- ตัวถุง -->
     <g filter="url(#shadow_{gid})">
-      <path d="M35,25 C35,13 45,7 57,7 L93,7 C105,7 115,13 115,25 L115,160
-               C115,176 104,186 88,188 L62,188 C46,186 35,176 35,160 Z"
-            fill="#ffffff" stroke="url(#edge_{gid})" stroke-width="3" filter="url(#smear_{gid})"/>
+      <path d="M30,22 C30,12 40,6 50,6 L90,6 C100,6 110,12 110,22 L110,155
+               C110,170 100,180 85,182 L45,182 C30,180 30,170 30,155 Z"
+            fill="#ffffff" stroke="#ef4444" stroke-opacity=".9" stroke-width="3.2" />
 
       <!-- ของเหลว -->
-      <rect x="36" y="{water_y:.1f}" width="78" height="{water_h:.1f}"
+      <rect x="31" y="{water_y:.1f}" width="78" height="{water_h:.1f}"
             fill="url(#liquid_{gid})" clip-path="url(#clip_{gid})"/>
 
-      <!-- เส้นผิวน้ำ + ไฮไลต์ -->
-      <path d="M36,160 Q75,174 114,160" fill="none" stroke="rgba(0,0,0,0.10)"/>
-      <rect x="41" y="21" width="9" height="165" fill="#ffffff" opacity=".35" clip-path="url(#clip_{gid})"/>
+      <!-- เส้นผิวน้ำ -->
+      <path d="M31,155 Q70,170 109,155" fill="none" stroke="rgba(0,0,0,0.10)"/>
     </g>
 
-    <!-- ป้าย max (ยังแสดง 20 max ไว้ที่มุม) -->
+    <!-- ป้าย max -->
     <g>
-      <rect x="82" y="17" rx="10" ry="10" width="52" height="22" fill="#ffffff" stroke="#e5e7eb"/>
-      <text x="108" y="32" text-anchor="middle" font-size="12" fill="#374151">{BAG_MAX} max</text>
+      <rect x="76" y="15" rx="10" ry="10" width="50" height="22" fill="#ffffff" stroke="#e5e7eb"/>
+      <text x="101" y="30" text-anchor="middle" font-size="12" fill="#374151">{BAG_MAX} max</text>
     </g>
 
-    <!-- ตัวอักษรกรุ๊ป -->
-    <text x="75" y="125" text-anchor="middle" font-weight="900" font-size="32" fill="{text_color}" {stroke_for_ab}>{blood_type}</text>
+    <!-- กรุ๊ปเลือด -->
+    <text x="70" y="120" text-anchor="middle" font-weight="900" font-size="32" fill="{textc}" {stroke_for_ab}>{blood_type}</text>
   </svg>
 
   <div style="text-align:center;line-height:1.2">
-    <div style="font-weight:800;font-size:14px">{int(total)} unit</div>
+    <div style="font-weight:800">{int(total_units)} unit</div>
   </div>
 </div>
 """
 
-# ===== Init DB =====
+
+# ===== Init DB & Admin key =====
 if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
     init_db()
 
 ADMIN_KEY = os.environ.get("BLOOD_ADMIN_KEY", "1234")
 
-# ===== SIDEBAR =====
+
+# ===== Sidebar =====
 st_autorefresh_ms = st.sidebar.number_input("Auto-refresh (ms)", 1000, 60000, 5000, step=500)
 st_autorefresh(interval=st_autorefresh_ms, key="auto_refresh")
 
@@ -197,7 +163,8 @@ with st.sidebar:
         elif pin:
             st.error("รหัสไม่ถูกต้อง")
 
-# ===== HEADER =====
+
+# ===== Header & Legend =====
 left, right = st.columns([3,1])
 with left:
     st.title("Blood Stock Real-time Monitor")
@@ -208,99 +175,123 @@ with right:
     except Exception:
         pass
 
-# ===== LEGEND =====
 c1, c2, c3 = st.columns(3)
 c1.markdown('<span class="badge"><span class="legend-dot" style="background:#ef4444"></span> วิกฤตใกล้หมด 0–4</span>', unsafe_allow_html=True)
 c2.markdown('<span class="badge"><span class="legend-dot" style="background:#f59e0b"></span> เพียงพอ 5–15</span>', unsafe_allow_html=True)
 c3.markdown('<span class="badge"><span class="legend-dot" style="background:#22c55e"></span> ปกติ ≥16</span>', unsafe_allow_html=True)
 
-# ===== OVERVIEW =====
-overview = get_all_status()
-blood_types = ["A", "B", "O", "AB"]  # เรียง A→B→O→AB
+
+# ===== Overview (A, B, O, AB) =====
+overview = get_all_status()          # [{blood_type, total}]
+blood_types = ["A", "B", "O", "AB"]  # เรียงตามที่ต้องการ
+
 cols = st.columns(4)
 selected = st.session_state.get("selected_bt")
 
 for i, bt in enumerate(blood_types):
     info = next(d for d in overview if d["blood_type"] == bt)
-    # ดึงสต็อก + ทำ normalize
-    dist_map = normalize_products(get_stock_by_blood(bt))
-    total = int(dist_map.get("Cryo", 0))  # ใช้รวมทั้งหมดเป็นตัวเลขใต้ถุง
+    total = int(info.get("total", 0))
 
     with cols[i]:
         st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
-        st_html(bag_svg(bt, total), height=270, scrolling=False)
+        st_html(bag_svg_classic(bt, total), height=260, scrolling=False)
         if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
             st.session_state["selected_bt"] = bt
             selected = bt
 
 st.divider()
 
-# ===== DETAIL =====
+
+# ===== Detail page (กราฟปกติด้านล่าง, ไม่มีกราฟซ่อนในถุง) =====
 if not selected:
-    st.info("กดเลือกรายละเอียดที่กรุ๊ปโลหิตด้านบน เพื่อดูสต็อกตามประเภทผลิตภัณฑ์และทำรายการเบิก/นำเข้า")
+    st.info("กดเลือกรายละเอียดที่กรุ๊ปโลหิตด้านบน เพื่อดูและปรับปรุงคลัง")
 else:
     st.subheader(f"รายละเอียดกรุ๊ป {selected}")
 
-    # ข้อมูลกรุ๊ปที่เลือก
-    dist_selected = normalize_products(get_stock_by_blood(selected))
-    total_selected = int(dist_selected.get("Cryo", 0))  # รวมทั้งหมด
+    # สรุปรวม + ถุงย่อ
+    total_selected = next(d for d in overview if d["blood_type"] == selected)["total"]
+    st_html(bag_svg_classic(selected, int(total_selected)), height=260, scrolling=False)
 
-    # ถุงสรุป (เอากราฟในถุงออกแล้ว)
-    st_html(bag_svg(selected, total_selected), height=270, scrolling=False)
+    # โหลดคงคลังตามชนิดผลิตภัณฑ์
+    # ต้องการเรียง: LPRC, PRC, FFP (แทน Plasma), Cryo(รวม), PC(แทน Platelets)
+    raw_list = get_stock_by_blood(selected)  # [{product_type, units}]
+    # map เดิม → ใหม่
+    mapping = {
+        "LPRC": "LPRC",
+        "PRC": "PRC",
+        "Plasma": "FFP",
+        "Cryo": "Cryo",
+        "Platelets": "PC",
+    }
 
-    # ตาราง + กราฟ (แก้ปัญหา alt.condition โดยใช้คอลัมน์สีแทน)
-    df = pd.DataFrame([{"product_type": k, "units": v} for k, v in dist_selected.items()])
-    df = df.set_index("product_type").loc[ALL_PRODUCTS_UI].reset_index()
+    # รวมยอด และคำนวณ Cryo = ผลรวมทั้งหมดของกรุ๊ปนั้น
+    temp = {}
+    group_sum = 0
+    for r in raw_list:
+        name = mapping.get(r["product_type"], r["product_type"])
+        u = int(r["units"])
+        group_sum += u
+        temp[name] = temp.get(name, 0) + u
 
-    # สีไฟจราจร
-    def traffic(u: int) -> str:
-        if u <= CRITICAL_MAX: return "#ef4444"
-        if u <= YELLOW_MAX:   return "#f59e0b"
-        return "#22c55e"
+    temp["Cryo"] = group_sum  # ตามที่ขอ: Cryo = รวมทั้งหมด
 
-    df["color"] = df["units"].apply(traffic)
+    order = ["LPRC", "PRC", "FFP", "Cryo", "PC"]
+    df = pd.DataFrame([{"product_type": k, "units": int(temp.get(k, 0))} for k in order])
 
-    # ทำให้กราฟนิ่ง: domain Y อิงค่าจริงอย่างน้อย = BAG_MAX
-    y_max = max(int(df["units"].max()), BAG_MAX)
+    if df["units"].sum() == 0:
+        st.warning("ยังไม่มีข้อมูลคงคลังสำหรับกรุ๊ปนี้")
+    else:
+        # สีกราฟตามไฟจราจร โดยเทียบค่า units: <=4 แดง, <=15 เหลือง, >15 เขียว
+        def color_for_units(v: int) -> str:
+            if v <= CRITICAL_MAX: return "#ef4444"
+            if v <= YELLOW_MAX:   return "#f59e0b"
+            return "#22c55e"
 
-    chart = (
-        alt.Chart(df)
-        .mark_bar()
-        .encode(
-            x=alt.X("product_type:N", title="ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวม, PC)"),
-            y=alt.Y("units:Q", title="จำนวนหน่วย (unit)", scale=alt.Scale(domainMin=0, domainMax=y_max)),
-            color=alt.Color("color:N", scale=None, legend=None),
-            tooltip=["product_type", "units"]
+        df["bar_color"] = df["units"].apply(color_for_units)
+
+        chart = (
+            alt.Chart(df)
+              .mark_bar()
+              .encode(
+                  x=alt.X('product_type:N', title='ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวม, PC)'),
+                  y=alt.Y('units:Q', title='จำนวนหน่วย (unit)', scale=alt.Scale(domainMin=0)),
+                  color=alt.Color('bar_color:N', scale=None, legend=None),
+                  tooltip=['product_type:N','units:Q']
+              )
+              .properties(height=320)
         )
-        .properties(height=340)
-    )
-    st.altair_chart(chart, use_container_width=True)
-    st.dataframe(df.drop(columns=["color"]), use_container_width=True, hide_index=True)
+        st.altair_chart(chart, use_container_width=True)
 
-    # ===== Update Mode (ไม่ให้แก้ Cryo เพราะเป็น 'รวม') =====
+        st.dataframe(df.drop(columns=["bar_color"]), use_container_width=True, hide_index=True)
+
+    # ===== Update Mode =====
     if admin_mode and pin_ok:
         st.markdown("#### ปรับปรุงคลัง")
         c1, c2, c3 = st.columns([1,1,2])
         with c1:
-            product = st.selectbox("ประเภทผลิตภัณฑ์", ["LPRC", "PRC", "FFP", "PC"])
+            product = st.selectbox("ประเภทผลิตภัณฑ์", ["LPRC", "PRC", "FFP", "Cryo", "PC"])
         with c2:
             qty = int(st.number_input("จำนวน (หน่วย)", min_value=1, max_value=1000, value=1, step=1))
         with c3:
             note = st.text_input("หมายเหตุ", placeholder="เหตุผลการทำรายการ เช่น นำเข้า/เบิกให้ผู้ป่วย/ทดแทนการหมดอายุ")
 
-        # จำกัดรวมสูงสุด = 20 โดยคิดจากผลรวมจริง (total_selected)
+        # แปลงชื่อกลับเป็นฐาน (ตาม db.py เดิม)
+        reverse_map = {"LPRC":"LPRC", "PRC":"PRC", "FFP":"Plasma", "Cryo":"Cryo", "PC":"Platelets"}
+
+        # ปัจจุบัน
         current_total = int(total_selected)
-        current_by_product = int(dist_selected.get(product, 0))
+        current_by_product = int(temp.get(product, 0))
 
         b1, b2 = st.columns(2)
         with b1:
             if st.button("➕ นำเข้าเข้าคลัง", use_container_width=True):
+                # จำกัดรวมไม่เกิน 20 ต่อกรุ๊ป (ตาม requirement เดิม)
                 space = max(0, BAG_MAX - min(current_total, BAG_MAX))
                 add = min(qty, space)
                 if add <= 0:
                     st.warning("เต็มคลังแล้ว (20/20) – ไม่สามารถนำเข้าเพิ่มได้")
                 else:
-                    adjust_stock(selected, product, add, actor="admin", note=note or "inbound")
+                    adjust_stock(selected, reverse_map[product], add, actor="admin", note=note or "inbound")
                     if add < qty:
                         st.info(f"นำเข้าได้เพียง {add} หน่วย (จำกัดเต็มคลัง 20)")
                     st.toast("บันทึกการนำเข้าแล้ว", icon="✅")
@@ -312,7 +303,7 @@ else:
                 if take <= 0:
                     st.warning(f"ไม่มี {product} ในกรุ๊ป {selected} เพียงพอสำหรับการเบิก")
                 else:
-                    adjust_stock(selected, product, -take, actor="admin", note=note or "outbound")
+                    adjust_stock(selected, reverse_map[product], -take, actor="admin", note=note or "outbound")
                     if take < qty:
                         st.info(f"ทำการเบิกได้เพียง {take} หน่วย (ตามยอดคงเหลือ)")
                     st.toast("บันทึกการเบิกออกแล้ว", icon="✅")
