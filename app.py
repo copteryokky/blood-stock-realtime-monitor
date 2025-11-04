@@ -11,7 +11,7 @@ try:
 except Exception:
     def st_autorefresh(*args, **kwargs): return None
 
-from db import init_db, get_all_status, get_stock_by_blood, adjust_stock  # ตัด get_transactions ออกตามที่ขอ
+from db import init_db, get_all_status, get_stock_by_blood, adjust_stock  # ไม่มี get_transactions
 
 # ===== PAGE CONFIG & THEME =====
 st.set_page_config(page_title="Blood Stock Real-time Monitor", page_icon="🩸", layout="wide")
@@ -63,7 +63,6 @@ UI_TO_DB = {
     "PRC": "PRC",
     "FFP": "Plasma",
     "PC": "Platelets",
-    # "Cryo": "Cryo"  # Cryo คือค่ารวม ไม่ให้แก้ตรง ๆ ที่ฟอร์ม
 }
 
 def normalize_products(rows):
@@ -261,27 +260,31 @@ else:
 
     st_html(bag_svg_with_distribution(selected, int(total_selected), dist_selected), height=270, scrolling=False)
 
-    # ตาราง+กราฟ Altair (สีตามไฟจราจร, ไม่มีกราฟในถุง)
+    # ตาราง+กราฟ Altair (สีตามไฟจราจรโดยไม่ใช้ alt.condition)
     df = pd.DataFrame([{"product_type":k, "units":v} for k,v in dist_selected.items()])
     df = df.set_index("product_type").loc[ALL_PRODUCTS_UI].reset_index()
 
-    # สเกลแกน Y ตามค่าจริง (ไม่ล็อค 20) ให้หายอาการกราฟหาย ๆ โผล่ ๆ
-    ymax = max(10, int(df["units"].max() * 1.2))
+    # คำนวณสีด้วย Pandas เพื่อหลีกเลี่ยง alt.condition
+    def color_for(u):
+        if u <= CRITICAL_MAX:
+            return "#ef4444"
+        elif u <= YELLOW_MAX:
+            return "#f59e0b"
+        return "#22c55e"
 
-    traffic_color_cond = alt.condition(
-        alt.datum.units <= CRITICAL_MAX, alt.value("#ef4444"),
-        alt.condition(alt.datum.units <= YELLOW_MAX, alt.value("#f59e0b"), alt.value("#22c55e"))
-    )
+    df["color"] = df["units"].apply(color_for)
+
+    ymax = max(10, int(df["units"].max() * 1.2))
 
     chart = alt.Chart(df).mark_bar().encode(
         x=alt.X('product_type:N', title='ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวม, PC)'),
         y=alt.Y('units:Q', title='จำนวนหน่วย (unit)', scale=alt.Scale(domainMin=0, domainMax=ymax)),
-        color=traffic_color_cond,
+        color=alt.Color('color:N', scale=None, legend=None),
         tooltip=['product_type','units']
     ).properties(height=340)
-    st.altair_chart(chart, use_container_width=True)
 
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.altair_chart(chart, use_container_width=True)
+    st.dataframe(df.drop(columns=["color"]), use_container_width=True, hide_index=True)
 
     # ===== Update Mode =====
     if admin_mode and pin_ok:
@@ -295,18 +298,14 @@ else:
         with c3:
             note = st.text_input("หมายเหตุ", placeholder="เหตุผลการทำรายการ เช่น นำเข้า/เบิกให้ผู้ป่วย/ทดแทนการหมดอายุ")
 
-        # ชื่อที่ไป DB
         product_db = UI_TO_DB[product_ui]
-
-        # สถานะปัจจุบัน
         current_total = int(total_selected)
         current_by_product = int(dist_selected.get(product_ui, 0))
 
         b1, b2 = st.columns(2)
         with b1:
             if st.button("➕ นำเข้าเข้าคลัง", use_container_width=True):
-                # จำกัดรวมไม่เกิน 20 ต่อกรุ๊ป (ของเหลวในถุง)
-                space = max(0, BAG_MAX - min(current_total, BAG_MAX))
+                space = max(0, BAG_MAX - min(current_total, BAG_MAX))   # จำกัดรวมไม่เกิน 20
                 add = min(qty, space)
                 if add <= 0:
                     st.warning("เต็มคลังแล้ว (20/20) – ไม่สามารถนำเข้าเพิ่มได้")
