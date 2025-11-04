@@ -11,7 +11,7 @@ try:
 except Exception:
     def st_autorefresh(*args, **kwargs): return None
 
-from db import init_db, get_all_status, get_stock_by_blood, adjust_stock  # ไม่มี get_transactions
+from db import init_db, get_all_status, get_stock_by_blood, adjust_stock
 
 # ===== PAGE CONFIG & THEME =====
 st.set_page_config(page_title="Blood Stock Real-time Monitor", page_icon="🩸", layout="wide")
@@ -22,15 +22,19 @@ h1,h2,h3{letter-spacing:.2px}
 .badge{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .5rem;border-radius:999px;background:#f3f4f6}
 .legend-dot{width:.7rem;height:.7rem;border-radius:999px;display:inline-block}
 .stButton>button{border-radius:12px;padding:.55rem 1rem;font-weight:600}
+
+/* Dataframe ฟอนต์ชัดขึ้น */
+[data-testid="stDataFrame"] table {font-size:14px;}
+[data-testid="stDataFrame"] th {font-size:14px; font-weight:700; color:#111827;}
 </style>
 """, unsafe_allow_html=True)
 
 # ===== CONFIG =====
-BAG_MAX      = 20    # ความจุสูงสุดของของเหลวในถุง (ใช้คำนวณระดับ)
+BAG_MAX      = 20    # ความจุใช้คำนวณระดับน้ำ (จำกัดนำเข้าไม่เกิน 20/กรุ๊ป)
 CRITICAL_MAX = 4     # 0–4 แดง
 YELLOW_MAX   = 15    # 5–15 เหลือง, >=16 เขียว
 
-# ===== Helpers =====
+# ----- helpers -----
 def compute_bag(total: int):
     t = max(0, int(total))
     if t <= CRITICAL_MAX:
@@ -50,26 +54,15 @@ def norm_pin(s:str)->str:
     return (s or "").translate(trans).strip()
 
 # ----- product name normalization (DB -> UI) -----
-RENAME_TO_UI = {
-    "Plasma": "FFP",      # Plasma -> FFP
-    "Platelets": "PC",    # Platelets -> PC
-}
-# UI order
-ALL_PRODUCTS_UI = ["LPRC", "PRC", "FFP", "Cryo", "PC"]
-
-# UI -> DB (ใช้ตอนปรับสต๊อก)
-UI_TO_DB = {
-    "LPRC": "LPRC",
-    "PRC": "PRC",
-    "FFP": "Plasma",
-    "PC": "Platelets",
-}
+# DB: "Plasma"->UI: "FFP", "Platelets"->UI: "PC"
+RENAME_TO_UI = {"Plasma": "FFP", "Platelets": "PC"}
+UI_TO_DB     = {"LPRC": "LPRC", "PRC": "PRC", "FFP": "Plasma", "PC": "Platelets"}
+ALL_PRODUCTS_UI = ["LPRC", "PRC", "FFP", "Cryo", "PC"]  # ลำดับแสดงผล
 
 def normalize_products(rows):
     """
     rows: [{'product_type':..., 'units':...}]
-    -> dict (ชื่อ UI) และเติม 0 ให้ครบทุกชนิด
-       โดย 'Cryo' = ผลรวม LPRC+PRC+FFP+PC (ยอดรวมของกรุ๊ป)
+    -> dict UI-name ครบทุกชนิด; Cryo = ผลรวม LPRC+PRC+FFP+PC
     """
     d = {name: 0 for name in ALL_PRODUCTS_UI}
     for r in rows:
@@ -80,19 +73,19 @@ def normalize_products(rows):
     d["Cryo"] = d["LPRC"] + d["PRC"] + d["FFP"] + d["PC"]
     return d
 
-# ===== SVG Blood Bag (เอากราฟในถุงออก, ขอบแดงเลอะ, ตัวเลขแสดงยอด Cryo) =====
+# ===== SVG Blood Bag (สมจริง, ขอบแดงเลอะ, ตัวหนังสือชัด) =====
 def bag_svg_with_distribution(blood_type: str, total: int, dist: dict) -> str:
-    status, label, pct = compute_bag(total)   # ระดับของเหลวยังอิง total (ยอดจริงของกรุ๊ป)
+    status, label, pct = compute_bag(total)   # ระดับน้ำยังอิงยอดรวมจริงของกรุ๊ป
     fill = bag_color(status)
 
-    # สีตัวอักษรกรุ๊ป
+    # สีตัวอักษรบนถุงตามกรุ๊ป
     letter_fill = {"A": "#facc15", "B": "#f472b6", "O": "#60a5fa", "AB": "#ffffff"}.get(blood_type, "#ffffff")
     letter_stroke = "#111827" if blood_type != "AB" else "#6b7280"
 
-    # ยอดที่แสดงใต้ถุง = Cryo (ผลรวมทั้งหมด)
+    # ตัวเลขใต้ถุง = Cryo (ผลรวมทุกชนิด)
     cryo_total = int(dist.get("Cryo", total))
 
-    # ความสูงของของเหลว (พื้นที่ภายใน)
+    # ค่าพื้นที่ภายในสำหรับคำนวณระดับของเหลว
     inner_h = 148.0
     inner_y0 = 40.0
     water_h = inner_h * pct / 100.0
@@ -163,12 +156,12 @@ def bag_svg_with_distribution(blood_type: str, total: int, dist: dict) -> str:
               fill="#ffffff" stroke="#dc2626" stroke-width="3" filter="url(#rough-{gid})"/>
       </g>
 
-      <!-- ของเหลว (ไม่มีกราฟในถุง) -->
+      <!-- ของเหลว -->
       <g clip-path="url(#clip-{gid})">
         <path d="{wave_path}" fill="url(#liquid-{gid})"/>
       </g>
 
-      <!-- แถบไฮไลต์ -->
+      <!-- ไฮไลต์ -->
       <rect x="38" y="22" width="10" height="176" fill="url(#gloss-{gid})" opacity=".7" clip-path="url(#clip-{gid})"/>
 
       <!-- ป้าย max -->
@@ -191,7 +184,7 @@ def bag_svg_with_distribution(blood_type: str, total: int, dist: dict) -> str:
 </div>
 """
 
-# ===== Init DB =====
+# ===== Init DB & Admin =====
 if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
     init_db()
 ADMIN_KEY = os.environ.get("BLOOD_ADMIN_KEY", "1234")
@@ -199,6 +192,7 @@ ADMIN_KEY = os.environ.get("BLOOD_ADMIN_KEY", "1234")
 # ===== SIDEBAR =====
 st_autorefresh_ms = st.sidebar.number_input("Auto-refresh (ms)", 1000, 60000, 5000, step=500)
 st_autorefresh(interval=st_autorefresh_ms, key="auto_refresh")
+
 with st.sidebar:
     st.header("Controls")
     admin_mode = st.toggle("Update Mode (สำหรับเจ้าหน้าที่)", value=False)
@@ -237,8 +231,8 @@ selected = st.session_state.get("selected_bt")
 
 for i, bt in enumerate(blood_types):
     info = next(d for d in overview if d["blood_type"] == bt)
-    total = int(info.get("total", 0))                      # ใช้คำนวณระดับของเหลว
-    dist = normalize_products(get_stock_by_blood(bt))      # dict พร้อม Cryo = รวม
+    total = int(info.get("total", 0))          # ใช้คำนวณระดับของเหลวในถุง
+    dist  = normalize_products(get_stock_by_blood(bt))  # dict พร้อม Cryo=รวม
 
     with cols[i]:
         st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
@@ -258,41 +252,73 @@ else:
     total_selected = next(d for d in overview if d["blood_type"] == selected)["total"]
     dist_selected = normalize_products(get_stock_by_blood(selected))
 
-    st_html(bag_svg_with_distribution(selected, int(total_selected), dist_selected), height=270, scrolling=False)
+    # --- จัดถุงเลือดให้อยู่กึ่งกลางหน้ากราฟ ---
+    _spL, _mid, _spR = st.columns([1, 1, 1])
+    with _mid:
+        st_html(
+            bag_svg_with_distribution(selected, int(total_selected), dist_selected),
+            height=270,
+            scrolling=False
+        )
 
-    # ตาราง+กราฟ Altair (สีตามไฟจราจรโดยไม่ใช้ alt.condition)
-    df = pd.DataFrame([{"product_type":k, "units":v} for k,v in dist_selected.items()])
+    # ------- ตาราง + กราฟ (ตัวหนังสือชัดขึ้น / สีตามไฟจราจร) -------
+    df = pd.DataFrame([{"product_type": k, "units": v} for k, v in dist_selected.items()])
     df = df.set_index("product_type").loc[ALL_PRODUCTS_UI].reset_index()
 
-    # คำนวณสีด้วย Pandas เพื่อหลีกเลี่ยง alt.condition
+    # คำนวณสีล่วงหน้า (แก้บั๊ก alt.condition)
     def color_for(u):
         if u <= CRITICAL_MAX:
-            return "#ef4444"
+            return "#ef4444"   # แดง
         elif u <= YELLOW_MAX:
-            return "#f59e0b"
-        return "#22c55e"
-
+            return "#f59e0b"   # เหลือง
+        return "#22c55e"       # เขียว
     df["color"] = df["units"].apply(color_for)
 
-    ymax = max(10, int(df["units"].max() * 1.2))
+    ymax = max(10, int(df["units"].max() * 1.25))  # กัน label ชนขอบ
 
-    chart = alt.Chart(df).mark_bar().encode(
-        x=alt.X('product_type:N', title='ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวม, PC)'),
-        y=alt.Y('units:Q', title='จำนวนหน่วย (unit)', scale=alt.Scale(domainMin=0, domainMax=ymax)),
-        color=alt.Color('color:N', scale=None, legend=None),
-        tooltip=['product_type','units']
-    ).properties(height=340)
-
+    chart = (
+        alt.Chart(df)
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "product_type:N",
+                title="ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวม, PC)",
+                axis=alt.Axis(labelAngle=0, labelFontSize=14, titleFontSize=14, labelColor="#111827", titleColor="#111827")
+            ),
+            y=alt.Y(
+                "units:Q",
+                title="จำนวนหน่วย (unit)",
+                scale=alt.Scale(domainMin=0, domainMax=ymax),
+                axis=alt.Axis(labelFontSize=14, titleFontSize=14, labelColor="#111827", titleColor="#111827")
+            ),
+            color=alt.Color("color:N", scale=None, legend=None),
+            tooltip=["product_type","units"]
+        )
+        .properties(height=360)
+        .configure_view(strokeOpacity=0)
+        .configure_mark(strokeWidth=0)
+    )
     st.altair_chart(chart, use_container_width=True)
-    st.dataframe(df.drop(columns=["color"]), use_container_width=True, hide_index=True)
+
+    # ตาราง: ฟอนต์เข้ม/ใหญ่ขึ้น
+    df_display = df.drop(columns=["color"])
+    st.dataframe(
+        df_display.style.set_properties(
+            **{"font-size": "14px", "font-weight": "600", "color": "#111827"}
+        ).set_table_styles(
+            [{"selector": "th", "props": [("font-size", "14px"), ("font-weight", "700"), ("color", "#111827")]}]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
 
     # ===== Update Mode =====
     if admin_mode and pin_ok:
         st.markdown("#### ปรับปรุงคลัง")
-        c1, c2, c3 = st.columns([1,1,2])
+        c1, c2, c3 = st.columns([1, 1, 2])
         with c1:
-            # Cryo เป็นยอดรวม ไม่แก้ตรง ๆ
-            product_ui = st.selectbox("ประเภทผลิตภัณฑ์", ["LPRC","PRC","FFP","PC"])
+            # Cryo เป็นยอดรวม ไม่ให้แก้ตรง ๆ
+            product_ui = st.selectbox("ประเภทผลิตภัณฑ์", ["LPRC", "PRC", "FFP", "PC"])
         with c2:
             qty = int(st.number_input("จำนวน (หน่วย)", min_value=1, max_value=1000, value=1, step=1))
         with c3:
