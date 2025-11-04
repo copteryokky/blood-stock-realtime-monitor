@@ -205,6 +205,9 @@ with st.sidebar:
         elif pin:
             st.error("รหัสไม่ถูกต้อง")
 
+    # 🔹 เมนูเข้าโหมดกรอกเลือด
+    show_entry = st.checkbox("กรอกเลือด")
+
 # ===== HEADER =====
 left, right = st.columns([3,1])
 with left:
@@ -215,6 +218,75 @@ with right:
         st.image("assets/header.jpg", use_container_width=True)
     except Exception:
         pass
+
+# ===== BLOOD ENTRY SCREEN (แสดงแทนหน้าหลักเมื่อเลือก "กรอกเลือด") =====
+# เตรียม DataFrame เริ่มต้นไว้ใน session_state (เพิ่ม/ลบแถวได้)
+if 'blood_entry_df' not in st.session_state:
+    st.session_state['blood_entry_df'] = pd.DataFrame({
+        "ID": pd.Series(dtype="int"),
+        "หมู่เลือด": pd.Series(dtype="str"),
+        "รหัส": pd.Series(dtype="str"),
+        "ว่าง": pd.Series(dtype="int"),
+        "จอง": pd.Series(dtype="int"),
+        "จำหน่าย": pd.Series(dtype="int"),
+        "หมดอายุ": pd.Series(dtype="int"),
+    })
+
+def _derive_status(row):
+    """คำนวณค่าสถานะตามกติกา: หมดอายุ > จำหน่าย > จอง > ว่าง"""
+    if int(row.get("หมดอายุ", 0) or 0) > 0:   return "หมดอายุ"
+    if int(row.get("จำหน่าย", 0) or 0) > 0:   return "จำหน่าย"
+    if int(row.get("จอง", 0) or 0) > 0:       return "จอง"
+    if int(row.get("ว่าง", 0) or 0) > 0:      return "ว่าง"
+    return "—"
+
+def _style_status(col):
+    """ใส่สีพื้นหลังตามสถานะ"""
+    colors = {"ว่าง":"#22c55e", "จอง":"#f59e0b", "จำหน่าย":"#9ca3af", "หมดอายุ":"#ef4444"}
+    return [
+        (f"background-color:{colors.get(v,'')};"
+         f"color:#fff;font-weight:700;text-align:center;border-radius:6px;padding:2px 6px")
+        if v in colors else ""
+        for v in col
+    ]
+
+if show_entry:
+    st.markdown("## กรอกเลือด")
+
+    # กำหนดชนิดคอลัมน์/ตัวเลือกใน data_editor
+    column_cfg = {
+        "ID": st.column_config.NumberColumn("ID", help="รหัสรายการ", step=1),
+        "หมู่เลือด": st.column_config.SelectboxColumn("หมู่เลือด", options=["A", "B", "O", "AB"]),
+        "รหัส": st.column_config.TextColumn("รหัส", help="รหัสถุง/บาร์โค้ด"),
+        "ว่าง": st.column_config.NumberColumn("ว่าง", step=1, min_value=0),
+        "จอง": st.column_config.NumberColumn("จอง", step=1, min_value=0),
+        "จำหน่าย": st.column_config.NumberColumn("จำหน่าย", step=1, min_value=0),
+        "หมดอายุ": st.column_config.NumberColumn("หมดอายุ", step=1, min_value=0),
+    }
+
+    edited = st.data_editor(
+        st.session_state['blood_entry_df'],
+        num_rows="dynamic",
+        column_config=column_cfg,
+        use_container_width=True,
+        hide_index=True,
+        key="blood_entry_editor",
+    )
+
+    # เติม "ค่าสถานะ" อัตโนมัติ
+    df_entry = edited.copy()
+    df_entry["ค่าสถานะ"] = df_entry.apply(_derive_status, axis=1)
+
+    # สรุป + สไตล์สีสถานะ
+    st.markdown("#### ตารางสรุป")
+    styled = df_entry.style.apply(_style_status, subset=["ค่าสถานะ"])
+    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+    # เก็บกลับ session
+    st.session_state['blood_entry_df'] = edited
+
+    # แสดงเฉพาะหน้านี้เมื่อเลือก "กรอกเลือด"
+    st.stop()
 
 # ===== LEGEND =====
 c1, c2, c3 = st.columns(3)
