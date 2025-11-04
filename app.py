@@ -3,7 +3,7 @@ from datetime import datetime
 import pandas as pd
 import altair as alt
 import streamlit as st
-from streamlit.components.v1 import html as st_html  # สำหรับเรนเดอร์ SVG
+from streamlit.components.v1 import html as st_html
 
 # ===== Auto refresh helper =====
 try:
@@ -22,7 +22,6 @@ h1,h2,h3{letter-spacing:.2px}
 .badge{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .5rem;border-radius:999px;background:#f3f4f6}
 .legend-dot{width:.7rem;height:.7rem;border-radius:999px;display:inline-block}
 .stButton>button{border-radius:12px;padding:.55rem 1rem;font-weight:600}
-
 /* Dataframe ฟอนต์ชัดขึ้น */
 [data-testid="stDataFrame"] table {font-size:14px;}
 [data-testid="stDataFrame"] th {font-size:14px; font-weight:700; color:#111827;}
@@ -34,7 +33,7 @@ BAG_MAX      = 20
 CRITICAL_MAX = 4
 YELLOW_MAX   = 15
 
-# ===== Utilities =====
+# ===== Utils =====
 def compute_bag(total: int):
     t = max(0, int(total))
     if t <= CRITICAL_MAX:
@@ -54,13 +53,18 @@ def norm_pin(s:str)->str:
     return (s or "").translate(trans).strip()
 
 def safe_int(x) -> int:
-    """แปลงค่าทุกชนิดไปเป็น int ถ้าไม่ได้ให้เป็น 0"""
+    """แปลงเป็นจำนวนเต็ม ถ้าไม่ใช่ตัวเลขให้เป็น 0; รองรับ None/ช่องว่าง/ตัวอักษร"""
     try:
-        if x is None: return 0
+        if x is None:
+            return 0
         xs = str(x).strip()
         if xs == "" or xs.lower() == "none":
             return 0
-        return int(float(xs))
+        # ตัดอักขระที่ไม่ใช่ตัวเลข/จุดทศนิยมออก (เช่น '12 หน่วย')
+        filtered = "".join(ch for ch in xs if (ch.isdigit() or ch in "+-."))
+        if filtered in ["", "+", "-", ".", "+.", "-."]:
+            return 0
+        return int(float(filtered))
     except Exception:
         return 0
 
@@ -70,7 +74,6 @@ UI_TO_DB     = {"LPRC": "LPRC", "PRC": "PRC", "FFP": "Plasma", "PC": "Platelets"
 ALL_PRODUCTS_UI = ["LPRC", "PRC", "FFP", "Cryo", "PC"]
 
 def normalize_products(rows):
-    """คืน dict ตามชื่อ UI ครบทุกชนิด; Cryo = ผลรวม LPRC+PRC+FFP+PC"""
     d = {name: 0 for name in ALL_PRODUCTS_UI}
     for r in rows:
         name = str(r.get("product_type","")).strip()
@@ -195,7 +198,6 @@ st_autorefresh_ms = st.sidebar.number_input("Auto-refresh (ms)", 1000, 60000, 50
 st_autorefresh(interval=st_autorefresh_ms, key="auto_refresh")
 
 with st.sidebar:
-    # ปุ่มนำทาง
     if st.session_state["mode"] == "dashboard":
         st.button("กรอกเลือด", type="primary", use_container_width=True, on_click=go_entry)
     else:
@@ -226,13 +228,13 @@ with right:
 # ===== BLOOD ENTRY SCREEN =====
 if 'blood_entry_df' not in st.session_state:
     st.session_state['blood_entry_df'] = pd.DataFrame({
-        "ID": pd.Series(dtype="int"),
-        "หมู่เลือด": pd.Series(dtype="str"),
-        "รหัส": pd.Series(dtype="str"),
-        "ว่าง": pd.Series(dtype="int"),
-        "จอง": pd.Series(dtype="int"),
-        "จำหน่าย": pd.Series(dtype="int"),
-        "หมดอายุ": pd.Series(dtype="int"),
+        "ID": pd.Series(dtype="object"),
+        "หมู่เลือด": pd.Series(dtype="object"),
+        "รหัส": pd.Series(dtype="object"),
+        "ว่าง": pd.Series(dtype="object"),
+        "จอง": pd.Series(dtype="object"),
+        "จำหน่าย": pd.Series(dtype="object"),
+        "หมดอายุ": pd.Series(dtype="object"),
     })
 
 def derive_status(row):
@@ -258,14 +260,15 @@ def style_status(col):
 if st.session_state["mode"] == "entry":
     st.markdown("## กรอกเลือด")
 
+    # ทำให้คอลัมน์รับได้ทั้งตัวเลข/ตัวหนังสือ
     column_cfg = {
-        "ID": st.column_config.NumberColumn("ID", help="รหัสรายการ", step=1),
+        "ID": st.column_config.TextColumn("ID", help="รหัสรายการ"),
         "หมู่เลือด": st.column_config.SelectboxColumn("หมู่เลือด", options=["A", "B", "O", "AB"]),
         "รหัส": st.column_config.TextColumn("รหัส", help="รหัสถุง/บาร์โค้ด"),
-        "ว่าง": st.column_config.NumberColumn("ว่าง", step=1, min_value=0),
-        "จอง": st.column_config.NumberColumn("จอง", step=1, min_value=0),
-        "จำหน่าย": st.column_config.NumberColumn("จำหน่าย", step=1, min_value=0),
-        "หมดอายุ": st.column_config.NumberColumn("หมดอายุ", step=1, min_value=0),
+        "ว่าง": st.column_config.TextColumn("ว่าง", help="พิมพ์ตัวเลขหรือข้อความได้"),
+        "จอง": st.column_config.TextColumn("จอง", help="พิมพ์ตัวเลขหรือข้อความได้"),
+        "จำหน่าย": st.column_config.TextColumn("จำหน่าย", help="พิมพ์ตัวเลขหรือข้อความได้"),
+        "หมดอายุ": st.column_config.TextColumn("หมดอายุ", help="พิมพ์ตัวเลขหรือข้อความได้"),
     }
 
     edited = st.data_editor(
@@ -277,17 +280,22 @@ if st.session_state["mode"] == "entry":
         key="blood_entry_editor",
     )
 
-    # ทำความสะอาดค่าเป็นตัวเลขเสมอ แล้วคำนวณสถานะ
+    # ทำความสะอาดและคำนวณสถานะ
     df_entry = edited.copy()
-    for c in ["ID", "ว่าง", "จอง", "จำหน่าย", "หมดอายุ"]:
+    for c in ["ว่าง", "จอง", "จำหน่าย", "หมดอายุ"]:
         if c in df_entry.columns:
-            df_entry[c] = df_entry[c].apply(safe_int)
+            df_entry[c] = df_entry[c].apply(lambda v: v if (v is None or str(v).strip()=="") else str(v))
 
+    # เพิ่มค่าสถานะ
     df_entry["ค่าสถานะ"] = df_entry.apply(derive_status, axis=1)
 
     st.markdown("#### ตารางสรุป")
-    styled = df_entry.style.apply(style_status, subset=["ค่าสถานะ"])
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    if "ค่าสถานะ" in df_entry.columns:
+        styled = df_entry.style.apply(style_status, subset=["ค่าสถานะ"])
+        st.dataframe(styled, use_container_width=True, hide_index=True)
+    else:
+        # กันล้มกรณีไม่มีคอลัมน์
+        st.dataframe(df_entry, use_container_width=True, hide_index=True)
 
     # เก็บกลับ session
     st.session_state['blood_entry_df'] = edited
