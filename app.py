@@ -92,6 +92,7 @@ def _init_state():
     st.session_state.setdefault("username", "")
     st.session_state.setdefault("page", "หน้าหลัก")
     st.session_state.setdefault("selected_bt", None)
+    st.session_state.setdefault("flash", None)  # <— สำหรับแบนเนอร์ 3 วินาที
     if "entries" not in st.session_state:
         st.session_state["entries"] = pd.DataFrame(
             columns=["ID","หมู่เลือด","รหัส","ว่าง","จอง","จำหน่าย","หมดอายุ","ค่าสถานะ"]
@@ -238,7 +239,11 @@ with st.sidebar:
                 st.session_state["logged_in"] = True
                 st.session_state["username"] = (u or "").strip() or "staff"
                 st.session_state["page"] = "หน้าหลัก"
-                st.toast("เข้าสู่ระบบสำเร็จ ✅")
+                # ตั้งค่า flash ให้ header ไปแสดง 3 วินาที แล้วหายเอง
+                st.session_state["flash"] = {
+                    "type": "success",
+                    "text": f"เข้าสู่ระบบสำเร็จ: {st.session_state['username']}"
+                }
                 _safe_rerun()
             else:
                 st.error("รหัสผ่านไม่ถูกต้อง (password = 1234)")
@@ -247,6 +252,7 @@ with st.sidebar:
         st.session_state["logged_in"] = False
         st.session_state["username"] = ""
         st.session_state["page"] = "หน้าหลัก"
+        st.session_state["flash"] = {"type": "info", "text": "ออกจากระบบแล้ว"}
         _safe_rerun()
 
 # ============ HEADER ============
@@ -255,8 +261,39 @@ with H1:
     st.title("Blood Stock Real-time Monitor")
     st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 with H2:
-    if st.session_state["logged_in"]:
-        st.success(f"เข้าสู่ระบบ: {st.session_state['username']}")
+    # แสดง Flash Banner (3 วิ) แล้วลบออก
+    if st.session_state.get("flash"):
+        ph = st.empty()
+        kind = st.session_state["flash"].get("type", "success")
+        text = st.session_state["flash"].get("text", "")
+        color = {
+            "success": "#16a34a",  # เขียว
+            "info":    "#0ea5e9",  # ฟ้า
+            "warning": "#f59e0b",  # เหลือง
+            "error":   "#ef4444",  # แดง
+        }.get(kind, "#16a34a")
+
+        ph.markdown(
+            f"""
+            <div style="
+                background:{color};
+                color:#fff;
+                padding:.65rem .9rem;
+                border-radius:12px;
+                font-weight:800;
+                text-align:center;
+                box-shadow:0 8px 20px rgba(0,0,0,.18);
+                letter-spacing:.2px;
+            ">
+                {text}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        import time
+        time.sleep(3)
+        ph.empty()
+        del st.session_state["flash"]
 
 # ============ PAGES ============
 page = st.session_state["page"]
@@ -338,7 +375,8 @@ if page == "หน้าหลัก":
                     else:
                         adjust_stock(sel, product_db, add, actor=st.session_state["username"] or "admin", note=note or "inbound")
                         if add < qty: st.info(f"นำเข้าได้เพียง {add} หน่วย (จำกัดเต็มคลัง 20)")
-                        st.toast("บันทึกการนำเข้าแล้ว", icon="✅"); _safe_rerun()
+                        st.session_state["flash"] = {"type":"success","text":"บันทึกการนำเข้าแล้ว ✅"}
+                        _safe_rerun()
             with b2:
                 if st.button("➖ เบิกออกจากคลัง", use_container_width=True):
                     take = min(qty, current_by_product)
@@ -347,7 +385,8 @@ if page == "หน้าหลัก":
                     else:
                         adjust_stock(sel, product_db, -take, actor=st.session_state["username"] or "admin", note=note or "outbound")
                         if take < qty: st.info(f"ทำการเบิกได้เพียง {take} หน่วย")
-                        st.toast("บันทึกการเบิกแล้ว", icon="✅"); _safe_rerun()
+                        st.session_state["flash"] = {"type":"success","text":"บันทึกการเบิกแล้ว ✅"}
+                        _safe_rerun()
 
 # ---------- หน้า: กรอกเลือด ----------
 elif page == "กรอกเลือด":
@@ -382,7 +421,9 @@ elif page == "กรอกเลือด":
             st.session_state["entries"] = pd.concat(
                 [st.session_state["entries"], pd.DataFrame([new_row])], ignore_index=True
             )
-            st.success("บันทึกรายการแล้ว")
+            st.session_state["flash"] = {"type":"success","text":"บันทึกรายการแล้ว ✅"}
+            _safe_rerun()
+
         st.markdown("### ตารางสรุป")
         df = st.session_state["entries"].copy()
         def color_status(val):
