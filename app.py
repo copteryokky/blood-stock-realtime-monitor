@@ -1,5 +1,5 @@
 import os, time
-from datetime import datetime
+from datetime import datetime, date
 import pandas as pd
 import altair as alt
 import streamlit as st
@@ -29,7 +29,7 @@ h1,h2,h3{letter-spacing:.2px}
 [data-testid="stSidebar"]{background:#2e343a;}
 [data-testid="stSidebar"] .sidebar-title{color:#e5e7eb;font-weight:800;font-size:1.06rem;margin:6px 0 10px 4px}
 
-/* --- User card (แสดงชื่อบนหัวเมนู) --- */
+/* --- User card --- */
 [data-testid="stSidebar"] .user-card{
   display:flex; align-items:center; gap:.8rem;
   background:linear-gradient(135deg,#39424a,#2f343a);
@@ -52,7 +52,7 @@ h1,h2,h3{letter-spacing:.2px}
 }
 [data-testid="stSidebar"] .stButton>button:hover{background:#f3f4f6}
 
-/* ====== ฟอร์ม LOGIN: ให้เห็นชัด ====== */
+/* ฟอร์ม LOGIN ให้เห็นชัด */
 [data-testid="stSidebar"] label{ color:#f3f4f6 !important; font-weight:700; }
 [data-testid="stSidebar"] input[type="text"],
 [data-testid="stSidebar"] input[type="password"]{
@@ -65,7 +65,6 @@ h1,h2,h3{letter-spacing:.2px}
   outline:none !important; border-color:#ef4444 !important;
   box-shadow:0 0 0 3px rgba(239,68,68,.25) !important;
 }
-/* ปุ่ม Login สีแดงชัด */
 [data-testid="stSidebar"] button[kind="primary"]{
   width:100%; background:#ef4444 !important; color:#ffffff !important;
   border:none !important; border-radius:10px !important; font-weight:800;
@@ -83,7 +82,7 @@ BAG_MAX      = 20
 CRITICAL_MAX = 4
 YELLOW_MAX   = 15
 AUTH_PASSWORD = "1234"
-FLASH_SECONDS = 2.5   # เวลาโชว์แถบแจ้งเตือนมุมขวา
+FLASH_SECONDS = 2.5
 
 # ============ STATE ============
 def _init_state():
@@ -92,10 +91,18 @@ def _init_state():
     st.session_state.setdefault("page", "หน้าหลัก")
     st.session_state.setdefault("selected_bt", None)
     st.session_state.setdefault("flash", None)   # {"type","text","until"}
+
+    # ตารางกรอกเลือด: ใช้สคีมาใหม่
+    cols = ["Exp date","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
     if "entries" not in st.session_state:
-        st.session_state["entries"] = pd.DataFrame(
-            columns=["ID","หมู่เลือด","รหัส","ว่าง","จอง","จำหน่าย","หมดอายุ","ค่าสถานะ","สถานะ(สี)"]
-        )
+        st.session_state["entries"] = pd.DataFrame(columns=cols)
+    else:
+        # อัปสเกลคอลัมน์เดิมให้เข้ากับสคีมาใหม่ (ถ้าจำเป็น)
+        for c in cols:
+            if c not in st.session_state["entries"].columns:
+                st.session_state["entries"][c] = ""
+        # จัดคอลัมน์ตามลำดับ
+        st.session_state["entries"] = st.session_state["entries"][cols]
 _init_state()
 
 # ============ HELPERS ============
@@ -128,7 +135,18 @@ def normalize_products(rows):
     d["Cryo"] = d["LPRC"] + d["PRC"] + d["FFP"] + d["PC"]
     return d
 
-# ===== SVG Blood Bag (ไม่มีเลข unit ใต้ถุงแล้ว) =====
+# สถานะ -> แสดงผลสี/ข้อความ
+STATUS_OPTIONS = ["ว่าง","จอง","จำหน่าย","Exp","หลุดจอง"]
+STATUS_COLOR = {
+    "ว่าง": "🟢 ว่าง",
+    "จอง": "🟠 จอง",
+    "จำหน่าย": "⚫ จำหน่าย",
+    "Exp": "🔴 Exp",
+    "หลุดจอง": "🔵 หลุดจอง",
+}
+STATUS_TO_K = {s: s for s in STATUS_OPTIONS}  # ให้ "ค่าสถานะ" เท่ากับ Status ตรง ๆ
+
+# ===== SVG Blood Bag (ไม่มีเลข unit ใต้ถุง) =====
 def bag_svg(blood_type: str, total: int, dist: dict) -> str:
     status, label, pct = compute_bag(total)
     fill = bag_color(status)
@@ -213,7 +231,6 @@ if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
 
 # ============ SIDEBAR ============
 with st.sidebar:
-    # การ์ดแสดงชื่อบนหัวเมนู (ถ้า login แล้ว)
     if st.session_state.get("logged_in"):
         name = (st.session_state.get("username") or "staff").strip()
         initials = (name[:2] or "ST").upper()
@@ -231,7 +248,6 @@ with st.sidebar:
         )
 
     st.markdown('<div class="sidebar-title">เมนู</div>', unsafe_allow_html=True)
-
     if st.button("หน้าหลัก", key="nav_home", use_container_width=True):
         st.session_state["page"] = "หน้าหลัก"; _safe_rerun()
     if st.button("กรอกเลือด", key="nav_entry", use_container_width=True):
@@ -241,7 +257,6 @@ with st.sidebar:
         st.session_state["page"] = "เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ"
         _safe_rerun()
 
-    # ======= ฟอร์มล็อกอิน =======
     if st.session_state["page"] == "เข้าสู่ระบบ" and not st.session_state["logged_in"]:
         st.markdown("### เข้าสู่ระบบ")
         with st.form("login_form", clear_on_submit=False):
@@ -275,7 +290,7 @@ with st.sidebar:
 st.title("Blood Stock Real-time Monitor")
 st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 
-# แถบแจ้งสถานะมุมขวา (fixed) โชว์ ~2.5 วิ แล้วหายเอง
+# Flash (ด้านขวาบน)
 if st.session_state.get("flash"):
     now = time.time()
     data = st.session_state["flash"]
@@ -359,43 +374,7 @@ if page == "หน้าหลัก":
             tooltip=["product_type","units"]
         ).properties(height=360).configure_view(strokeOpacity=0)
         st.altair_chart(chart, use_container_width=True)
-
         st.dataframe(df.drop(columns=["color"]), use_container_width=True, hide_index=True)
-
-        if st.session_state["logged_in"]:
-            st.markdown("#### ปรับปรุงคลัง (ต้องล็อกอิน)")
-            c1,c2,c3 = st.columns([1,1,2])
-            with c1:
-                product_ui = st.selectbox("ประเภทผลิตภัณฑ์", ["LPRC","PRC","FFP","PC"])
-            with c2:
-                qty = int(st.number_input("จำนวน (หน่วย)", min_value=1, max_value=1000, value=1, step=1))
-            with c3:
-                note = st.text_input("หมายเหตุ", placeholder="เหตุผลการทำรายการ เช่น นำเข้า/เบิกให้ผู้ป่วย/ทดแทนการหมดอายุ")
-            product_db = UI_TO_DB[product_ui]
-            current_total = int(total_sel)
-            current_by_product = int(dist_sel.get(product_ui, 0))
-            b1,b2 = st.columns(2)
-            with b1:
-                if st.button("➕ นำเข้าเข้าคลัง", use_container_width=True):
-                    space = max(0, BAG_MAX - min(current_total, BAG_MAX))
-                    add = min(qty, space)
-                    if add <= 0:
-                        st.warning("เต็มคลังแล้ว (20/20)")
-                    else:
-                        adjust_stock(sel, product_db, add, actor=st.session_state["username"] or "admin", note=note or "inbound")
-                        if add < qty: st.info(f"นำเข้าได้เพียง {add} หน่วย (จำกัดเต็มคลัง 20)")
-                        st.session_state["flash"] = {"type":"success","text":"บันทึกการนำเข้าแล้ว ✅","until": time.time()+FLASH_SECONDS}
-                        _safe_rerun()
-            with b2:
-                if st.button("➖ เบิกออกจากคลัง", use_container_width=True):
-                    take = min(qty, current_by_product)
-                    if take <= 0:
-                        st.warning(f"ไม่มี {product_ui} เพียงพอสำหรับการเบิก")
-                    else:
-                        adjust_stock(sel, product_db, -take, actor=st.session_state["username"] or "admin", note=note or "outbound")
-                        if take < qty: st.info(f"ทำการเบิกได้เพียง {take} หน่วย")
-                        st.session_state["flash"] = {"type":"success","text":"บันทึกการเบิกแล้ว ✅","until": time.time()+FLASH_SECONDS}
-                        _safe_rerun()
 
 # ---------- หน้า: กรอกเลือด ----------
 elif page == "กรอกเลือด":
@@ -403,71 +382,65 @@ elif page == "กรอกเลือด":
     if not st.session_state["logged_in"]:
         st.warning("ต้องล็อกอินก่อนจึงจะใช้งานเมนูนี้ได้")
     else:
+        # ===== ฟอร์มคอลัมน์ใหม่ =====
         with st.form("blood_entry_form", clear_on_submit=True):
-            c1,c2,c3 = st.columns([1,1,1])
+            c1,c2 = st.columns(2)
             with c1:
-                _id = st.text_input("ID")
-                blood = st.selectbox("หมู่เลือด", ["A","B","O","AB"])
+                unit_number = st.text_input("Unit number")
+                group = st.selectbox("Group", ["A","B","O","AB"])
+                component = st.selectbox("Blood Components", ["LPRC","PRC","FFP","Cryo","PC"])
             with c2:
-                code = st.text_input("รหัส")
-                free = st.text_input("ว่าง", value="")
-            with c3:
-                book = st.text_input("จอง", value="")
-                sold = st.text_input("จำหน่าย", value="")
-            exp = st.text_input("หมดอายุ", value="")
-            note = st.text_input("บันทึก", value="")
-            submit = st.form_submit_button("บันทึก", use_container_width=True)
-        if submit:
-            def derive_status(row):
-                try:
-                    if str(row.get("หมดอายุ") or "").strip() not in ["","0"]: return "หมดอายุ"
-                    if str(row.get("จำหน่าย") or "").strip() not in ["","0"]: return "จำหน่าย"
-                    if str(row.get("จอง") or "").strip() not in ["","0"]: return "จอง"
-                    if str(row.get("ว่าง") or "").strip() not in ["","0"]: return "ว่าง"
-                except Exception: pass
-            # default
-            status = derive_status({"หมดอายุ":exp,"จำหน่าย":sold,"จอง":book,"ว่าง":free}) or "ว่าง"
-            color_map = {"ว่าง":"🟢 ว่าง","จอง":"🟠 จอง","จำหน่าย":"⚫ จำหน่าย","หมดอายุ":"🔴 หมดอายุ"}
-            new_row = {"ID":_id,"หมู่เลือด":blood,"รหัส":code,"ว่าง":free,"จอง":book,"จำหน่าย":sold,"หมดอายุ":exp,
-                       "ค่าสถานะ":status,"สถานะ(สี)":color_map.get(status,status)}
+                exp_date = st.date_input("Exp date", value=date.today())
+                status = st.selectbox("Status", STATUS_OPTIONS, index=0)
+                note = st.text_input("บันทึก")
+
+            submitted = st.form_submit_button("บันทึกรายการ", use_container_width=True)
+
+        if submitted:
+            k_status = STATUS_TO_K.get(status, status)
+            color_status = STATUS_COLOR.get(status, status)
+            new_row = {
+                "Exp date": exp_date.strftime("%Y-%m-%d") if isinstance(exp_date, date) else str(exp_date),
+                "Unit number": unit_number,
+                "Group": group,
+                "Blood Components": component,
+                "Status": status,
+                "ค่าสถานะ": k_status,
+                "สถานะ(สี)": color_status,
+                "บันทึก": note,
+            }
             st.session_state["entries"] = pd.concat(
                 [st.session_state["entries"], pd.DataFrame([new_row])], ignore_index=True
             )
             st.session_state["flash"] = {"type":"success","text":"บันทึกรายการแล้ว ✅","until": time.time()+FLASH_SECONDS}
             _safe_rerun()
 
+        # ===== ตารางสรุป (แก้ไขได้) =====
         st.markdown("### ตารางสรุป (แก้ไขได้)")
-
-        # เตรียมคอลัมน์คอนฟิกสำหรับ editor
         col_cfg = {
-            "หมู่เลือด": st.column_config.SelectboxColumn("หมู่เลือด", options=["A","B","O","AB"]),
+            "Exp date": st.column_config.DateColumn("Exp date", format="YYYY-MM-DD"),
+            "Unit number": st.column_config.TextColumn("Unit number"),
+            "Group": st.column_config.SelectboxColumn("Group", options=["A","B","O","AB"]),
+            "Blood Components": st.column_config.SelectboxColumn("Blood Components", options=["LPRC","PRC","FFP","Cryo","PC"]),
+            "Status": st.column_config.SelectboxColumn("Status", options=STATUS_OPTIONS),
             "ค่าสถานะ": st.column_config.TextColumn("ค่าสถานะ", disabled=True),
-            "สถานะ(สี)": st.column_config.TextColumn("สถานะ(สี)", disabled=True, help="คำนวณอัตโนมัติ"),
+            "สถานะ(สี)": st.column_config.TextColumn("สถานะ(สี)", disabled=True),
+            "บันทึก": st.column_config.TextColumn("บันทึก"),
         }
 
         edited = st.data_editor(
             st.session_state["entries"],
-            num_rows="dynamic",  # เพิ่ม/ลบแถวได้
+            num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
             column_config=col_cfg
         )
 
-        # คำนวณค่าสถานะใหม่เมื่อมีการแก้ไข
-        def derive_status_row(row):
-            try:
-                if str(row.get("หมดอายุ") or "").strip() not in ["","0"]: return "หมดอายุ"
-                if str(row.get("จำหน่าย") or "").strip() not in ["","0"]: return "จำหน่าย"
-                if str(row.get("จอง") or "").strip() not in ["","0"]: return "จอง"
-                if str(row.get("ว่าง") or "").strip() not in ["","0"]: return "ว่าง"
-            except Exception: pass
-            return "ว่าง"
-
+        # คำนวณค่าสถานะ/สีใหม่ตาม Status ทุกครั้งที่มีการแก้ไข
         if not edited.equals(st.session_state["entries"]):
             edited = edited.copy()
-            edited["ค่าสถานะ"] = edited.apply(derive_status_row, axis=1)
-            color_map = {"ว่าง":"🟢 ว่าง","จอง":"🟠 จอง","จำหน่าย":"⚫ จำหน่าย","หมดอายุ":"🔴 หมดอายุ"}
-            edited["สถานะ(สี)"] = edited["ค่าสถานะ"].map(lambda s: color_map.get(s, s))
+            edited["ค่าสถานะ"] = edited["Status"].map(lambda s: STATUS_TO_K.get(s, s))
+            edited["สถานะ(สี)"] = edited["Status"].map(lambda s: STATUS_COLOR.get(s, s))
             st.session_state["entries"] = edited
             st.session_state["flash"] = {"type":"success","text":"อัปเดตตารางแล้ว ✅","until": time.time()+FLASH_SECONDS}
             _safe_rerun()
