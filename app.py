@@ -134,6 +134,21 @@ def normalize_products(rows):
     d["Cryo"] = d["LPRC"] + d["PRC"] + d["FFP"] + d["PC"]
     return d
 
+def derive_status(row: dict) -> str:
+    """คำนวณค่าสถานะจาก 4 คอลัมน์: หมดอายุ > จำหน่าย > จอง > ว่าง"""
+    try:
+        if str(row.get("หมดอายุ") or "").strip() not in ["", "0"]:
+            return "หมดอายุ"
+        if str(row.get("จำหน่าย") or "").strip() not in ["", "0"]:
+            return "จำหน่าย"
+        if str(row.get("จอง") or "").strip() not in ["", "0"]:
+            return "จอง"
+        if str(row.get("ว่าง") or "").strip() not in ["", "0"]:
+            return "ว่าง"
+    except Exception:
+        pass
+    return "ว่าง"
+
 def bag_svg(blood_type: str, total: int, dist: dict) -> str:
     status, label, pct = compute_bag(total)
     fill = bag_color(status)
@@ -418,14 +433,6 @@ elif page == "กรอกเลือด":
             exp = st.text_input("หมดอายุ", value="")
             submit = st.form_submit_button("บันทึก", use_container_width=True)
         if submit:
-            def derive_status(row):
-                try:
-                    if str(row.get("หมดอายุ") or "").strip() not in ["","0"]: return "หมดอายุ"
-                    if str(row.get("จำหน่าย") or "").strip() not in ["","0"]: return "จำหน่าย"
-                    if str(row.get("จอง") or "").strip() not in ["","0"]: return "จอง"
-                    if str(row.get("ว่าง") or "").strip() not in ["","0"]: return "ว่าง"
-                except Exception: pass
-                return "ว่าง"
             new_row = {"ID":_id,"หมู่เลือด":blood,"รหัส":code,"ว่าง":free,"จอง":book,"จำหน่าย":sold,"หมดอายุ":exp}
             new_row["ค่าสถานะ"] = derive_status(new_row)
             st.session_state["entries"] = pd.concat(
@@ -435,17 +442,57 @@ elif page == "กรอกเลือด":
             _safe_rerun()
 
         st.markdown("### ตารางสรุป")
+
+        # ใช้ Data Editor เพื่อแก้ไขได้ทันที + เพิ่ม/ลบแถวได้
         df = st.session_state["entries"].copy()
-        def color_status(val):
-            m = {
-                "ว่าง": "background-color:#22c55e; color:white; font-weight:700",
-                "จอง": "background-color:#f59e0b; color:white; font-weight:700",
-                "จำหน่าย": "background-color:#6b7280; color:white; font-weight:700",
-                "หมดอายุ": "background-color:#ef4444; color:white; font-weight:700",
-            }
-            return m.get(str(val).strip(), "")
-        if df.empty:
-            st.info("ยังไม่มีรายการ")
-        else:
-            st.dataframe(df.style.applymap(color_status, subset=["ค่าสถานะ"]),
-                         use_container_width=True, hide_index=True)
+        for col in ["ID","หมู่เลือด","รหัส","ว่าง","จอง","จำหน่าย","หมดอายุ","ค่าสถานะ"]:
+            if col not in df.columns:
+                df[col] = ""
+
+        edited_df = st.data_editor(
+            df,
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "หมู่เลือด": st.column_config.SelectboxColumn(
+                    "หมู่เลือด", options=["A","B","O","AB"], required=True
+                ),
+                "ค่าสถานะ": st.column_config.TextColumn(
+                    "ค่าสถานะ", help="ระบบคำนวณให้อัตโนมัติจาก ว่าง/จอง/จำหน่าย/หมดอายุ", disabled=True
+                ),
+                # ใช้ NumberColumn ได้หากต้องการบังคับตัวเลขล้วน:
+                # "ว่าง": st.column_config.NumberColumn("ว่าง", step=1, min_value=0),
+                # "จอง": st.column_config.NumberColumn("จอง", step=1, min_value=0),
+                # "จำหน่าย": st.column_config.NumberColumn("จำหน่าย", step=1, min_value=0),
+                # "หมดอายุ": st.column_config.NumberColumn("หมดอายุ", step=1, min_value=0),
+            },
+            key="entries_editor"
+        )
+
+        # คำนวณค่าสถานะใหม่หลังแก้ไข
+        if not edited_df.empty:
+            edited_df["ค่าสถานะ"] = [
+                derive_status(row._asdict() if hasattr(row, "_asdict") else row)
+                for _, row in edited_df.iterrows()
+            ]
+
+        c_left, c_right = st.columns([1,1])
+        with c_left:
+            if st.button("บันทึกการแก้ไข", type="primary"):
+                st.session_state["entries"] = edited_df.reset_index(drop=True)
+                st.session_state["flash"] = {
+                    "type":"success", "text":"บันทึกการแก้ไขในตารางเรียบร้อย ✅",
+                    "until": time.time()+FLASH_SECONDS
+                }
+                _safe_rerun()
+        with c_right:
+            if st.button("ล้างตาราง (รีเซ็ต)", help="ลบข้อมูลในตารางสรุปทั้งหมด"):
+                st.session_state["entries"] = pd.DataFrame(
+                    columns=["ID","หมู่เลือด","รหัส","ว่าง","จอง","จำหน่าย","หมดอายุ","ค่าสถานะ"]
+                )
+                st.session_state["flash"] = {
+                    "type":"warning", "text":"ล้างตารางแล้ว",
+                    "until": time.time()+FLASH_SECONDS
+                }
+                _safe_rerun()
