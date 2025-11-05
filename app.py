@@ -1,3 +1,4 @@
+# app.py
 import os, time
 from datetime import datetime, date
 import pandas as pd
@@ -78,17 +79,17 @@ h1,h2,h3{letter-spacing:.2px}
 """, unsafe_allow_html=True)
 
 # ============ CONFIG ============
-BAG_MAX      = 20         # max ถุงต่อกรุ๊ป
-CRITICAL_MAX = 4
-YELLOW_MAX   = 15
-CRYO_MAX     = 30         # (ใช้เป็นเกณฑ์ภาพรวม ถ้าจะใช้ในอนาคตก็พร้อมแล้ว)
+BAG_MAX       = 20          # max ถุงต่อกรุ๊ป
+CRITICAL_MAX  = 4
+YELLOW_MAX    = 15
+CRYO_MAX      = 30          # ไว้เผื่อใช้ภายหลัง
 AUTH_PASSWORD = "1234"
 FLASH_SECONDS = 2.5
 
 # ===== กลุ่ม-สินค้า และ mapping =====
-RENAME_TO_UI = {"Plasma": "FFP", "Platelets": "PC"}
-UI_TO_DB     = {"LPRC":"LPRC","PRC":"PRC","FFP":"Plasma","PC":"Platelets"}  # Cryo ไม่มีใน DB
-ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]                          # ลำดับที่ต้องการบนกราฟ
+RENAME_TO_UI  = {"Plasma": "FFP", "Platelets": "PC"}
+UI_TO_DB      = {"LPRC":"LPRC","PRC":"PRC","FFP":"Plasma","PC":"Platelets"}  # Cryo ไม่มีใน DB
+ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]                           # ลำดับคงที่บนกราฟ
 
 # ===== สถานะสำหรับกรอกเลือด =====
 STATUS_OPTIONS = ["ว่าง","จอง","จำหน่าย","Exp","หลุดจอง"]
@@ -156,7 +157,7 @@ def get_global_cryo():
                 total += int(r.get("units",0))
     return total
 
-# ===== SVG ถุงเลือด (ตัดตัวเลข unit ใต้ถุงออก) =====
+# ===== SVG ถุงเลือด (สไตล์ใหม่: ไม่มีตัวเลข unit ใต้ถุง) =====
 def bag_svg(blood_type: str, total: int, dist: dict) -> str:
     status, label, pct = compute_bag(total, BAG_MAX)
     fill = bag_color(status)
@@ -168,12 +169,14 @@ def bag_svg(blood_type: str, total: int, dist: dict) -> str:
     water_y = inner_y0 + (inner_h - water_h)
     gid = f"g_{blood_type}"
     wave_amp = 5 + 6*(pct/100)
-    wave_path = f"M24,{water_y:.1f} Q54,{water_y - wave_amp:.1f} 84,{water_y:.1f} Q114,{water_y + wave_amp:.1f} 144,{water_y:.1f} L144,198 24,198 Z"
+    wave_path = f"M24,{water_y:.1f} Q54,{water_y - wave_amp:.1f} 84,{water_y:.1f} " \
+                f"Q114,{water_y + wave_amp:.1f} 144,{water_y:.1f} L144,198 24,198 Z"
 
     return f"""
 <div>
   <style>
-    .bag-wrap{{display:flex;flex-direction:column;align-items:center;gap:10px;font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial}}
+    .bag-wrap{{display:flex;flex-direction:column;align-items:center;gap:10px;
+               font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial}}
     .bag{{transition:transform .18s ease, filter .18s ease}}
     .bag:hover{{transform:translateY(-2px); filter:drop-shadow(0 10px 22px rgba(0,0,0,.12));}}
   </style>
@@ -351,7 +354,7 @@ if page == "หน้าหลัก":
 
         ymax = max(10, int(df["units"].max() * 1.25))
 
-        # ใช้ alt.layer เพื่อเลี่ยง TypeError
+        # ใช้ alt.layer พร้อมกำหนด data ใน layer เดียว เพื่อเลี่ยง TypeError
         bars = alt.Chart().mark_bar().encode(
             x=alt.X("product_type:N", title="ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวมทุกกรุ๊ป, PC)",
                     axis=alt.Axis(labelAngle=0,labelFontSize=14,titleFontSize=14,
