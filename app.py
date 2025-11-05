@@ -1,4 +1,4 @@
-import os
+import os, time
 from datetime import datetime
 import pandas as pd
 import altair as alt
@@ -36,7 +36,7 @@ h1,h2,h3{letter-spacing:.2px}
 }
 [data-testid="stSidebar"] .stButton>button:hover{background:#f3f4f6}
 
-/* ====== ฟอร์ม LOGIN: ทำให้เห็นชัดจริง ๆ ====== */
+/* ====== ฟอร์ม LOGIN: ให้เห็นชัด ====== */
 [data-testid="stSidebar"] label{ color:#f3f4f6 !important; font-weight:700; }
 
 [data-testid="stSidebar"] input[type="text"],
@@ -48,23 +48,11 @@ h1,h2,h3{letter-spacing:.2px}
   font-weight:600 !important;
   caret-color:#111827 !important;
 }
-
-/* placeholder ให้ต่างสีและชัด */
 [data-testid="stSidebar"] input::placeholder{ color:#6b7280 !important; opacity:1 !important; }
-
-/* โฟกัสให้กรอบชัด */
 [data-testid="stSidebar"] input:focus{
   outline:none !important;
-  border-color:#ef4444 !important; /* แดง */
+  border-color:#ef4444 !important;
   box-shadow:0 0 0 3px rgba(239,68,68,.25) !important;
-}
-
-/* จัดการ autofill สีเหลืองของ Chrome */
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus{
-  -webkit-box-shadow:0 0 0px 1000px #ffffff inset !important;
-  -webkit-text-fill-color:#111827 !important;
 }
 
 /* ปุ่ม Login สีแดงชัด */
@@ -85,6 +73,7 @@ BAG_MAX      = 20
 CRITICAL_MAX = 4
 YELLOW_MAX   = 15
 AUTH_PASSWORD = "1234"
+FLASH_SECONDS = 2.5   # ระยะเวลาที่โชว์กล่องสถานะ
 
 # ============ STATE ============
 def _init_state():
@@ -92,7 +81,8 @@ def _init_state():
     st.session_state.setdefault("username", "")
     st.session_state.setdefault("page", "หน้าหลัก")
     st.session_state.setdefault("selected_bt", None)
-    st.session_state.setdefault("flash", None)  # <— สำหรับแบนเนอร์ 3 วินาที
+    # flash banner: {"type": "...", "text": "...", "until": epoch_seconds}
+    st.session_state.setdefault("flash", None)
     if "entries" not in st.session_state:
         st.session_state["entries"] = pd.DataFrame(
             columns=["ID","หมู่เลือด","รหัส","ว่าง","จอง","จำหน่าย","หมดอายุ","ค่าสถานะ"]
@@ -225,7 +215,7 @@ with st.sidebar:
         st.session_state["page"] = "เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ"
         _safe_rerun()
 
-    # ======= ฟอร์มล็อกอิน (แก้เฉพาะส่วนนี้ให้เห็นชัด) =======
+    # ======= ฟอร์มล็อกอิน =======
     if st.session_state["page"] == "เข้าสู่ระบบ" and not st.session_state["logged_in"]:
         st.markdown("### เข้าสู่ระบบ")
         with st.form("login_form", clear_on_submit=False):
@@ -239,10 +229,11 @@ with st.sidebar:
                 st.session_state["logged_in"] = True
                 st.session_state["username"] = (u or "").strip() or "staff"
                 st.session_state["page"] = "หน้าหลัก"
-                # ตั้งค่า flash ให้ header ไปแสดง 3 วินาที แล้วหายเอง
+                # ตั้ง flash โดยไม่หน่วงเวลา
                 st.session_state["flash"] = {
                     "type": "success",
-                    "text": f"เข้าสู่ระบบสำเร็จ: {st.session_state['username']}"
+                    "text": f"เข้าสู่ระบบสำเร็จ: {st.session_state['username']}",
+                    "until": time.time() + FLASH_SECONDS
                 }
                 _safe_rerun()
             else:
@@ -252,7 +243,7 @@ with st.sidebar:
         st.session_state["logged_in"] = False
         st.session_state["username"] = ""
         st.session_state["page"] = "หน้าหลัก"
-        st.session_state["flash"] = {"type": "info", "text": "ออกจากระบบแล้ว"}
+        st.session_state["flash"] = {"type":"info","text":"ออกจากระบบแล้ว","until": time.time()+FLASH_SECONDS}
         _safe_rerun()
 
 # ============ HEADER ============
@@ -260,40 +251,40 @@ H1, H2 = st.columns([3,1])
 with H1:
     st.title("Blood Stock Real-time Monitor")
     st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-with H2:
-    # แสดง Flash Banner (3 วิ) แล้วลบออก
-    if st.session_state.get("flash"):
-        ph = st.empty()
-        kind = st.session_state["flash"].get("type", "success")
-        text = st.session_state["flash"].get("text", "")
-        color = {
-            "success": "#16a34a",  # เขียว
-            "info":    "#0ea5e9",  # ฟ้า
-            "warning": "#f59e0b",  # เหลือง
-            "error":   "#ef4444",  # แดง
-        }.get(kind, "#16a34a")
 
-        ph.markdown(
+# แสดง Flash Banner แบบ fixed มุมขวา "ลดลงมาจากขอบบน"
+# ไม่ใช้ sleep — ใช้ timestamp until เพื่อตัดทิ้งเอง
+if st.session_state.get("flash"):
+    now = time.time()
+    data = st.session_state["flash"]
+    if now < data.get("until", 0):
+        color = {
+            "success": "#16a34a",
+            "info":    "#0ea5e9",
+            "warning": "#f59e0b",
+            "error":   "#ef4444",
+        }.get(data.get("type","success"), "#16a34a")
+        st.markdown(
             f"""
             <div style="
+                position:fixed;
+                top:90px;            /* ลดลงมาจากขอบบนให้เห็นชัด */
+                right:24px;
+                z-index:9999;
                 background:{color};
                 color:#fff;
-                padding:.65rem .9rem;
+                padding:.70rem 1.0rem;
                 border-radius:12px;
                 font-weight:800;
-                text-align:center;
-                box-shadow:0 8px 20px rgba(0,0,0,.18);
-                letter-spacing:.2px;
-            ">
-                {text}
+                box-shadow:0 10px 24px rgba(0,0,0,.18);
+                letter-spacing:.2px;">
+                {data.get("text","")}
             </div>
             """,
-            unsafe_allow_html=True,
+            unsafe_allow_html=True
         )
-        import time
-        time.sleep(3)
-        ph.empty()
-        del st.session_state["flash"]
+    else:
+        st.session_state["flash"] = None  # หมดเวลา — ลบออก
 
 # ============ PAGES ============
 page = st.session_state["page"]
@@ -375,7 +366,7 @@ if page == "หน้าหลัก":
                     else:
                         adjust_stock(sel, product_db, add, actor=st.session_state["username"] or "admin", note=note or "inbound")
                         if add < qty: st.info(f"นำเข้าได้เพียง {add} หน่วย (จำกัดเต็มคลัง 20)")
-                        st.session_state["flash"] = {"type":"success","text":"บันทึกการนำเข้าแล้ว ✅"}
+                        st.session_state["flash"] = {"type":"success","text":"บันทึกการนำเข้าแล้ว ✅","until": time.time()+FLASH_SECONDS}
                         _safe_rerun()
             with b2:
                 if st.button("➖ เบิกออกจากคลัง", use_container_width=True):
@@ -385,7 +376,7 @@ if page == "หน้าหลัก":
                     else:
                         adjust_stock(sel, product_db, -take, actor=st.session_state["username"] or "admin", note=note or "outbound")
                         if take < qty: st.info(f"ทำการเบิกได้เพียง {take} หน่วย")
-                        st.session_state["flash"] = {"type":"success","text":"บันทึกการเบิกแล้ว ✅"}
+                        st.session_state["flash"] = {"type":"success","text":"บันทึกการเบิกแล้ว ✅","until": time.time()+FLASH_SECONDS}
                         _safe_rerun()
 
 # ---------- หน้า: กรอกเลือด ----------
@@ -421,7 +412,7 @@ elif page == "กรอกเลือด":
             st.session_state["entries"] = pd.concat(
                 [st.session_state["entries"], pd.DataFrame([new_row])], ignore_index=True
             )
-            st.session_state["flash"] = {"type":"success","text":"บันทึกรายการแล้ว ✅"}
+            st.session_state["flash"] = {"type":"success","text":"บันทึกรายการแล้ว ✅","until": time.time()+FLASH_SECONDS}
             _safe_rerun()
 
         st.markdown("### ตารางสรุป")
