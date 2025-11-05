@@ -92,16 +92,14 @@ def _init_state():
     st.session_state.setdefault("selected_bt", None)
     st.session_state.setdefault("flash", None)   # {"type","text","until"}
 
-    # ตารางกรอกเลือด: ใช้สคีมาใหม่
+    # ตารางกรอกเลือด: สคีมาใหม่
     cols = ["Exp date","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
     if "entries" not in st.session_state:
         st.session_state["entries"] = pd.DataFrame(columns=cols)
     else:
-        # อัปสเกลคอลัมน์เดิมให้เข้ากับสคีมาใหม่ (ถ้าจำเป็น)
         for c in cols:
             if c not in st.session_state["entries"].columns:
                 st.session_state["entries"][c] = ""
-        # จัดคอลัมน์ตามลำดับ
         st.session_state["entries"] = st.session_state["entries"][cols]
 _init_state()
 
@@ -135,7 +133,7 @@ def normalize_products(rows):
     d["Cryo"] = d["LPRC"] + d["PRC"] + d["FFP"] + d["PC"]
     return d
 
-# สถานะ -> แสดงผลสี/ข้อความ
+# สถานะ
 STATUS_OPTIONS = ["ว่าง","จอง","จำหน่าย","Exp","หลุดจอง"]
 STATUS_COLOR = {
     "ว่าง": "🟢 ว่าง",
@@ -144,9 +142,9 @@ STATUS_COLOR = {
     "Exp": "🔴 Exp",
     "หลุดจอง": "🔵 หลุดจอง",
 }
-STATUS_TO_K = {s: s for s in STATUS_OPTIONS}  # ให้ "ค่าสถานะ" เท่ากับ Status ตรง ๆ
+STATUS_TO_K = {s: s for s in STATUS_OPTIONS}
 
-# ===== SVG Blood Bag (ไม่มีเลข unit ใต้ถุง) =====
+# ===== SVG Bag (ไม่มีตัวเลข unit ใต้ถุง) =====
 def bag_svg(blood_type: str, total: int, dist: dict) -> str:
     status, label, pct = compute_bag(total)
     fill = bag_color(status)
@@ -417,6 +415,11 @@ elif page == "กรอกเลือด":
 
         # ===== ตารางสรุป (แก้ไขได้) =====
         st.markdown("### ตารางสรุป (แก้ไขได้)")
+
+        # เตรียม df สำหรับ editor: แปลง Exp date -> date object
+        df_vis = st.session_state["entries"].copy()
+        df_vis["Exp date"] = pd.to_datetime(df_vis["Exp date"], errors="coerce").dt.date
+
         col_cfg = {
             "Exp date": st.column_config.DateColumn("Exp date", format="YYYY-MM-DD"),
             "Unit number": st.column_config.TextColumn("Unit number"),
@@ -429,18 +432,41 @@ elif page == "กรอกเลือด":
         }
 
         edited = st.data_editor(
-            st.session_state["entries"],
+            df_vis,
             num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
             column_config=col_cfg
         )
 
-        # คำนวณค่าสถานะ/สีใหม่ตาม Status ทุกครั้งที่มีการแก้ไข
-        if not edited.equals(st.session_state["entries"]):
-            edited = edited.copy()
-            edited["ค่าสถานะ"] = edited["Status"].map(lambda s: STATUS_TO_K.get(s, s))
-            edited["สถานะ(สี)"] = edited["Status"].map(lambda s: STATUS_COLOR.get(s, s))
-            st.session_state["entries"] = edited
+        # ถ้ามีการแก้ไข: normalise แล้วเซฟกลับ session_state
+        if not edited.equals(df_vis):
+            out = edited.copy()
+
+            # แปลง Exp date กลับเป็นสตริง ISO
+            def _d2s(x):
+                if pd.isna(x):
+                    return ""
+                if isinstance(x, (datetime, pd.Timestamp)):
+                    return x.date().isoformat()
+                if isinstance(x, date):
+                    return x.isoformat()
+                return str(x)
+
+            out["Exp date"] = out["Exp date"].apply(_d2s)
+
+            # บังคับ Status -> ค่าสถานะ/สี
+            out["ค่าสถานะ"] = out["Status"].map(lambda s: STATUS_TO_K.get(s, s))
+            out["สถานะ(สี)"] = out["Status"].map(lambda s: STATUS_COLOR.get(s, s))
+
+            # บังคับคอลัมน์และชนิดข้อมูลเป็น str (ยกเว้น Exp date ที่เป็น str ISO)
+            for c in ["Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]:
+                out[c] = out[c].astype(str).fillna("")
+
+            # จัดลำดับคอลัมน์คงที่
+            cols = ["Exp date","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
+            out = out[cols]
+
+            st.session_state["entries"] = out.reset_index(drop=True)
             st.session_state["flash"] = {"type":"success","text":"อัปเดตตารางแล้ว ✅","until": time.time()+FLASH_SECONDS}
             _safe_rerun()
