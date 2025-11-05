@@ -1,4 +1,3 @@
-# app.py
 import os, time
 from datetime import datetime, date
 import pandas as pd
@@ -82,14 +81,13 @@ h1,h2,h3{letter-spacing:.2px}
 BAG_MAX       = 20          # max ถุงต่อกรุ๊ป
 CRITICAL_MAX  = 4
 YELLOW_MAX    = 15
-CRYO_MAX      = 30          # สำหรับคำนวณรวมทุกกรุ๊ป (ถ้าต้องใช้)
 AUTH_PASSWORD = "1234"
 FLASH_SECONDS = 2.5
 
 # ===== กลุ่ม-สินค้า และ mapping =====
 RENAME_TO_UI    = {"Plasma": "FFP", "Platelets": "PC"}
 UI_TO_DB        = {"LPRC":"LPRC","PRC":"PRC","FFP":"Plasma","PC":"Platelets"}  # Cryo ไม่มีใน DB
-ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]                             # ลำดับคงที่บนกราฟ
+ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]
 
 # ===== สถานะสำหรับกรอกเลือด =====
 STATUS_OPTIONS = ["ว่าง","จอง","จำหน่าย","Exp","หลุดจอง"]
@@ -109,7 +107,6 @@ def _init_state():
     st.session_state.setdefault("selected_bt", None)
     st.session_state.setdefault("flash", None)
 
-    # ตารางสำหรับหน้า “กรอกเลือด”
     cols = ["Exp date","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
     if "entries" not in st.session_state:
         st.session_state["entries"] = pd.DataFrame(columns=cols)
@@ -133,11 +130,11 @@ def compute_bag(total: int, max_cap=BAG_MAX):
     pct = max(0, min(100, int(round(100 * min(t, max_cap) / max_cap))))
     return status, label, pct
 
+# >>> สีถุงตามที่ขอ <<<
 def bag_color(status: str) -> str:
     return {"green":"#22c55e", "yellow":"#f59e0b", "red":"#ef4444"}[status]
 
 def normalize_products(rows):
-    """รวมหน่วยของกรุ๊ปเดียว (ไม่รวม Cryo)"""
     d = {name: 0 for name in ALL_PRODUCTS_UI}
     for r in rows:
         name = str(r.get("product_type","")).strip()
@@ -147,7 +144,6 @@ def normalize_products(rows):
     return d
 
 def get_global_cryo():
-    """Cryo = รวมหน่วยของทุกกรุ๊ป/ทุก component (LPRC,PRC,FFP,PC)"""
     total = 0
     for bt in ["A","B","O","AB"]:
         rows = get_stock_by_blood(bt)
@@ -158,7 +154,7 @@ def get_global_cryo():
                 total += int(r.get("units",0))
     return total
 
-# ===== SVG ถุงเลือด (สไตล์ตามภาพ + แสดง "XX unit" ใต้ถุง) =====
+# ===== SVG ถุงเลือด (โชว์ XX unit ใต้ถุง) =====
 def bag_svg(blood_type: str, total: int) -> str:
     status, _label, pct = compute_bag(total, BAG_MAX)
     fill = bag_color(status)
@@ -204,35 +200,30 @@ def bag_svg(blood_type: str, total: int) -> str:
         </filter>
       </defs>
 
-      <!-- หัวถุง -->
       <circle cx="84" cy="10" r="7.5" fill="#eef2ff" stroke="#dbe0ea" stroke-width="3"/>
       <rect x="77.5" y="14" width="13" height="8" rx="3" fill="#e5e7eb"/>
 
-      <!-- ขอบถุง -->
       <g>
         <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
                  L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
-              fill="#ffffff" stroke="#7f1d1d" stroke-width="6" opacity=".15" filter="url(#blood-smear-{gid})"/>
+              fill="#ffffff" stroke="#7f1d1d" stroke-width="6" opacity=".15"/>
         <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
                  L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
               fill="#ffffff" stroke="#dc2626" stroke-width="3"/>
       </g>
 
-      <!-- ของเหลว -->
       <g clip-path="url(#clip-{gid})">
         <path d="{wave_path}" fill="url(#liquid-{gid})"/>
       </g>
       <rect x="38" y="22" width="10" height="176" fill="url(#gloss-{gid})" opacity=".7" clip-path="url(#clip-{gid})"/>
 
-      <!-- ป้าย max -->
       <g>
         <rect x="98" y="24" rx="10" ry="10" width="54" height="22" fill="#ffffff" stroke="#e5e7eb"/>
         <text x="125" y="40" text-anchor="middle" font-size="12" fill="#374151">{BAG_MAX} max</text>
       </g>
 
-      <!-- ตัวอักษรกรุ๊ป -->
       <text x="84" y="126" text-anchor="middle" font-size="32" font-weight="900"
-            style="paint-order: stroke fill" stroke="{letter_stroke}" stroke-width="4"
+            style="paint-order: stroke fill" stroke="#111827" stroke-width="4"
             fill="{letter_fill}">{blood_type}</text>
     </svg>
     <div class="bag-caption">{int(total)} unit</div>
@@ -246,7 +237,6 @@ if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
 
 # ============ SIDEBAR ============
 with st.sidebar:
-    # การ์ดชื่อผู้ใช้
     if st.session_state.get("logged_in"):
         name = (st.session_state.get("username") or "staff").strip()
         initials = (name[:2] or "ST").upper()
@@ -273,14 +263,11 @@ with st.sidebar:
         st.session_state["page"] = "เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ"
         _safe_rerun()
 
-    # Login form
     if st.session_state["page"] == "เข้าสู่ระบบ" and not st.session_state["logged_in"]:
         st.markdown("### เข้าสู่ระบบ")
         with st.form("login_form", clear_on_submit=False):
-            u = st.text_input("Username", key="login_user",
-                              placeholder="พิมพ์ชื่อผู้ใช้ได้เลย", label_visibility="visible")
-            p = st.text_input("Password", key="login_pwd",
-                              type="password", placeholder="ใส่รหัส = 1234", label_visibility="visible")
+            u = st.text_input("Username", key="login_user", placeholder="พิมพ์ชื่อผู้ใช้ได้เลย")
+            p = st.text_input("Password", key="login_pwd", type="password", placeholder="ใส่รหัส = 1234")
             sub = st.form_submit_button("Login", type="primary", use_container_width=True)
         if sub:
             if p == AUTH_PASSWORD:
@@ -354,7 +341,7 @@ if page == "หน้าหลัก":
         with _M:
             st_html(bag_svg(sel, int(total_sel)), height=270, scrolling=False)
 
-        # คำนวณยอดแยกประเภท + Cryo รวมทุกกรุ๊ป
+        # แยกตาม product + Cryo รวมทุกกรุ๊ป
         def _normalize(blood):
             rows = get_stock_by_blood(blood)
             d = {name: 0 for name in ALL_PRODUCTS_UI}
@@ -379,7 +366,7 @@ if page == "หน้าหลัก":
         df["color"] = df["units"].apply(color_for)
         ymax = max(10, int(df["units"].max() * 1.25))
 
-        # Altair: ใช้ layer เพื่อเลี่ยง TypeError เวลา + mark_text
+        # Altair: layer(bar + text) ป้องกัน TypeError
         bars = alt.Chart().mark_bar().encode(
             x=alt.X("product_type:N", title="ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวมทุกกรุ๊ป, PC)",
                     axis=alt.Axis(labelAngle=0,labelFontSize=14,titleFontSize=14,
@@ -398,7 +385,7 @@ if page == "หน้าหลัก":
         st.altair_chart(chart, use_container_width=True)
         st.dataframe(df[["product_type","units"]], use_container_width=True, hide_index=True)
 
-        # ===== ปรับปรุงคลัง (ต้องล็อกอิน)
+        # ===== ปรับปรุงคลัง =====
         if st.session_state["logged_in"]:
             st.markdown("#### ปรับปรุงคลัง (ต้องล็อกอิน)")
             c1,c2,c3 = st.columns([1,1,2])
@@ -411,8 +398,6 @@ if page == "หน้าหลัก":
 
             current_by_product = int(dist_sel.get(product_ui, 0))
             b1,b2 = st.columns(2)
-
-            # นำเข้า (ยกเว้น Cryo)
             with b1:
                 if st.button("➕ นำเข้าเข้าคลัง", use_container_width=True, disabled=(product_ui=="Cryo")):
                     if product_ui == "Cryo":
@@ -428,12 +413,9 @@ if page == "หน้าหลัก":
                             if add < qty: st.info(f"นำเข้าได้เพียง {add} หน่วย (จำกัดเต็มคลัง 20)")
                             st.session_state["flash"] = {"type":"success","text":"บันทึกการนำเข้าแล้ว ✅","until": time.time()+FLASH_SECONDS}
                             _safe_rerun()
-
-            # เบิกออก
             with b2:
                 if st.button("➖ เบิกออกจากคลัง", use_container_width=True):
                     if product_ui == "Cryo":
-                        # กระจายหักทุกกรุ๊ปตามลำดับสำคัญ
                         priority = ["PRC","LPRC","FFP","PC"]
                         remain_all = qty
                         for bt in ["A","B","O","AB"]:
@@ -441,8 +423,7 @@ if page == "หน้าหลัก":
                             dist_bt = normalize_products(get_stock_by_blood(bt))
                             for p in priority:
                                 have = int(dist_bt.get(p,0))
-                                if have <= 0: 
-                                    continue
+                                if have <= 0: continue
                                 take = min(remain_all, have)
                                 if take > 0:
                                     adjust_stock(bt, UI_TO_DB[p], -take, actor=st.session_state["username"] or "admin",
@@ -485,11 +466,9 @@ elif page == "กรอกเลือด":
                 component = st.selectbox("Blood Components", ["LPRC","PRC","FFP","Cryo","PC"])
             with c6:
                 note = st.text_input("บันทึก")
-
             submitted = st.form_submit_button("บันทึกรายการ", use_container_width=True)
 
         if submitted:
-            # เก็บ Exp date เป็น YYYY/MM/DD ให้ดูเหมือนภาพ
             exp_str = exp_date.strftime("%Y/%m/%d") if isinstance(exp_date, date) else str(exp_date)
             k_status = status
             color_status = STATUS_COLOR.get(status, status)
@@ -531,7 +510,6 @@ elif page == "กรอกเลือด":
 
         if not edited.equals(df_vis):
             out = edited.copy()
-
             def _d2str(x):
                 if pd.isna(x): return ""
                 if isinstance(x, (datetime, pd.Timestamp)): return x.date().strftime("%Y/%m/%d")
