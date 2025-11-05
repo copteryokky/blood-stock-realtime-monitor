@@ -77,17 +77,17 @@ h1,h2,h3{letter-spacing:.2px}
 """, unsafe_allow_html=True)
 
 # ============ CONFIG ============
-BAG_MAX      = 20         # max ของถุงแต่ละกรุ๊ป
+BAG_MAX      = 20
 CRITICAL_MAX = 4
 YELLOW_MAX   = 15
-CRYO_MAX     = 30         # max ของ Cryo (รวมทุกกรุ๊ป)
+CRYO_MAX     = 30
 AUTH_PASSWORD = "1234"
 FLASH_SECONDS = 2.5
 
-# ===== กลุ่ม-สินค้า และ mapping =====
+# ===== mapping =====
 RENAME_TO_UI = {"Plasma": "FFP", "Platelets": "PC"}
-UI_TO_DB     = {"LPRC":"LPRC","PRC":"PRC","FFP":"Plasma","PC":"Platelets"}  # Cryo ไม่มีใน DB
-ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]                          # ลำดับที่ต้องการบนกราฟ
+UI_TO_DB     = {"LPRC":"LPRC","PRC":"PRC","FFP":"Plasma","PC":"Platelets"}
+ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]
 
 STATUS_OPTIONS = ["ว่าง","จอง","จำหน่าย","Exp","หลุดจอง"]
 STATUS_COLOR = {
@@ -123,26 +123,23 @@ def compute_bag(total: int, max_cap=BAG_MAX):
     t = max(0, int(total))
     if t <= CRITICAL_MAX: status, label = "red", "วิกฤต"
     elif t <= YELLOW_MAX: status, label = "yellow", "เพียงพอ"
-    else: status, label = "ปกติ", "ปกติ"
+    else: status, label = "green", "ปกติ"
     pct = max(0, min(100, int(round(100 * min(t, max_cap) / max_cap))))
-    return status if status in ["green","yellow","red"] else "green", label, pct
+    return status, label, pct
 
 def bag_color(status: str) -> str:
-    return {"green":"#22c55e", "yellow":"#f59e0b", "red":"#ef4444"}.get(status, "#22c55e")
+    return {"green":"#22c55e", "yellow":"#f59e0b", "red":"#ef4444"}[status]
 
 def normalize_products(rows):
-    """รวมหน่วยของกรุ๊ปเดียว (ไม่รวม Cryo)"""
     d = {name: 0 for name in ALL_PRODUCTS_UI}
     for r in rows:
         name = str(r.get("product_type","")).strip()
         ui = RENAME_TO_UI.get(name, name)
         if ui in d and ui != "Cryo":
             d[ui] += int(r.get("units",0))
-    # Cryo จะคำนวณแบบ global แยกอีกที
     return d
 
 def get_global_cryo():
-    """Cryo = รวมหน่วยของทุกกรุ๊ป/ทุก component (LPRC,PRC,FFP,PC)"""
     total = 0
     for bt in ["A","B","O","AB"]:
         rows = get_stock_by_blood(bt)
@@ -152,7 +149,6 @@ def get_global_cryo():
                 total += int(r.get("units",0))
     return total
 
-# ===== SVG ถุงเลือด (ไม่โชว์ตัวเลขใต้ถุง) =====
 def bag_svg(blood_type: str, total: int, dist: dict) -> str:
     status, label, pct = compute_bag(total)
     fill = bag_color(status)
@@ -313,23 +309,20 @@ if page == "หน้าหลัก":
         st.subheader(f"รายละเอียดกรุ๊ป {sel}")
         total_sel = next(d for d in overview if d["blood_type"] == sel)["total"]
         dist_sel  = normalize_products(get_stock_by_blood(sel))
-
-        # เติมค่า Cryo = global (รวมทุกกรุ๊ป)
+        # Cryo = รวมทุกกรุ๊ป
         dist_sel["Cryo"] = get_global_cryo()
 
-        # แสดงถุงกรุ๊ป
         _L,_M,_R = st.columns([1,1,1])
         with _M:
             st_html(bag_svg(sel, int(total_sel), dist_sel), height=260, scrolling=False)
 
-        # ===== ตาราง+กราฟตามลำดับที่กำหนด พร้อมตัวเลขบนแท่ง =====
+        # ===== กราฟเรียง LPRC, PRC, FFP, Cryo, PC + ติดตัวเลขบนแท่ง =====
         df = pd.DataFrame([{"product_type":k, "units":int(v)} for k,v in dist_sel.items()])
         order = pd.CategoricalDtype(ALL_PRODUCTS_UI, ordered=True)
         df["product_type"] = df["product_type"].astype(order)
         df = df.sort_values("product_type").reset_index(drop=True)
 
-        # ตั้งสี: เขียว(>=16), เหลือง(<=15), แดง(<=4) เฉพาะ Cryo ใช้ CRYO_MAX ใน label แต่สีใช้ thresholds เดิม
-        def color_for(u): 
+        def color_for(u):
             if u <= CRITICAL_MAX: return "#ef4444"
             if u <= YELLOW_MAX:   return "#f59e0b"
             return "#22c55e"
@@ -337,23 +330,28 @@ if page == "หน้าหลัก":
 
         ymax = max(10, int(df["units"].max() * 1.25))
 
-        bars = alt.Chart(df).mark_bar().encode(
-            x=alt.X("product_type:N", title="ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวมทุกกรุ๊ป, PC)",
+        chart = alt.Chart(df).properties(height=360).configure_view(strokeOpacity=0)
+        bars = chart.mark_bar().encode(
+            x=alt.X("product_type:N",
+                    sort=ALL_PRODUCTS_UI,
+                    title="ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวมทุกกรุ๊ป, PC)",
                     axis=alt.Axis(labelAngle=0,labelFontSize=14,titleFontSize=14,
                                   labelColor="#111827",titleColor="#111827")),
-            y=alt.Y("units:Q", title="จำนวนหน่วย (unit)",
+            y=alt.Y("units:Q",
+                    title="จำนวนหน่วย (unit)",
                     scale=alt.Scale(domainMin=0, domainMax=ymax),
                     axis=alt.Axis(labelFontSize=14,titleFontSize=14,
                                   labelColor="#111827",titleColor="#111827")),
             color=alt.Color("color:N", scale=None, legend=None),
             tooltip=["product_type","units"]
-        ).properties(height=360).configure_view(strokeOpacity=0)
-
-        labels = bars.mark_text(
-            align="center", baseline="bottom", dy=-4, fontSize=14
-        ).encode(text="units:Q")
-
+        )
+        labels = chart.mark_text(align="center", baseline="bottom", dy=-4, fontSize=14).encode(
+            x=alt.X("product_type:N", sort=ALL_PRODUCTS_UI),
+            y=alt.Y("units:Q"),
+            text="units:Q"
+        )
         st.altair_chart(bars + labels, use_container_width=True)
+
         st.dataframe(df[["product_type","units"]], use_container_width=True, hide_index=True)
 
         # ===== ปรับปรุงคลัง =====
@@ -370,14 +368,12 @@ if page == "หน้าหลัก":
             current_by_product = int(dist_sel.get(product_ui, 0))
             b1,b2 = st.columns(2)
 
-            # นำเข้า (เฉพาะ LPRC/PRC/FFP/PC)
             with b1:
                 if st.button("➕ นำเข้าเข้าคลัง", use_container_width=True, disabled=(product_ui=="Cryo")):
                     if product_ui == "Cryo":
                         st.warning("Cryo คำนวณจากยอดรวมทุกกรุ๊ป ไม่สามารถนำเข้าโดยตรงได้")
                     else:
                         product_db = UI_TO_DB[product_ui]
-                        # จำกัดไม่ให้เกิน BAG_MAX ต่อกรุ๊ป
                         space = max(0, BAG_MAX - min(int(total_sel), BAG_MAX))
                         add = min(qty, space)
                         if add <= 0:
@@ -388,11 +384,10 @@ if page == "หน้าหลัก":
                             st.session_state["flash"] = {"type":"success","text":"บันทึกการนำเข้าแล้ว ✅","until": time.time()+FLASH_SECONDS}
                             _safe_rerun()
 
-            # เบิกออก
             with b2:
                 if st.button("➖ เบิกออกจากคลัง", use_container_width=True):
                     if product_ui == "Cryo":
-                        # กระจายหักทุกกรุ๊ป: ตามลำดับความสำคัญ PRC -> LPRC -> FFP -> PC
+                        # หักทุกกรุ๊ปตามลำดับ PRC -> LPRC -> FFP -> PC
                         priority = ["PRC","LPRC","FFP","PC"]
                         for bt in ["A","B","O","AB"]:
                             remain = qty
@@ -437,7 +432,6 @@ elif page == "กรอกเลือด":
                 exp_date = st.date_input("Exp date", value=date.today())
                 status = st.selectbox("Status", STATUS_OPTIONS, index=0)
                 note = st.text_input("บันทึก")
-
             submitted = st.form_submit_button("บันทึกรายการ", use_container_width=True)
 
         if submitted:
