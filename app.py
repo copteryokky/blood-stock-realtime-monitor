@@ -309,14 +309,13 @@ if page == "หน้าหลัก":
         st.subheader(f"รายละเอียดกรุ๊ป {sel}")
         total_sel = next(d for d in overview if d["blood_type"] == sel)["total"]
         dist_sel  = normalize_products(get_stock_by_blood(sel))
-        # Cryo = รวมทุกกรุ๊ป
         dist_sel["Cryo"] = get_global_cryo()
 
         _L,_M,_R = st.columns([1,1,1])
         with _M:
             st_html(bag_svg(sel, int(total_sel), dist_sel), height=260, scrolling=False)
 
-        # ===== กราฟเรียง LPRC, PRC, FFP, Cryo, PC + ติดตัวเลขบนแท่ง =====
+        # ===== กราฟ: เรียง LPRC, PRC, FFP, Cryo, PC พร้อมตัวเลขบนแท่ง (ใช้ alt.layer เพื่อกัน TypeError) =====
         df = pd.DataFrame([{"product_type":k, "units":int(v)} for k,v in dist_sel.items()])
         order = pd.CategoricalDtype(ALL_PRODUCTS_UI, ordered=True)
         df["product_type"] = df["product_type"].astype(order)
@@ -327,11 +326,10 @@ if page == "หน้าหลัก":
             if u <= YELLOW_MAX:   return "#f59e0b"
             return "#22c55e"
         df["color"] = df["units"].apply(color_for)
-
         ymax = max(10, int(df["units"].max() * 1.25))
 
-        chart = alt.Chart(df).properties(height=360).configure_view(strokeOpacity=0)
-        bars = chart.mark_bar().encode(
+        base = alt.Chart(df).properties(height=360).configure_view(strokeOpacity=0)
+        bars = base.mark_bar().encode(
             x=alt.X("product_type:N",
                     sort=ALL_PRODUCTS_UI,
                     title="ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวมทุกกรุ๊ป, PC)",
@@ -339,18 +337,20 @@ if page == "หน้าหลัก":
                                   labelColor="#111827",titleColor="#111827")),
             y=alt.Y("units:Q",
                     title="จำนวนหน่วย (unit)",
-                    scale=alt.Scale(domainMin=0, domainMax=ymax),
+                    scale=alt.Scale(domain=[0, ymax]),
                     axis=alt.Axis(labelFontSize=14,titleFontSize=14,
                                   labelColor="#111827",titleColor="#111827")),
             color=alt.Color("color:N", scale=None, legend=None),
             tooltip=["product_type","units"]
         )
-        labels = chart.mark_text(align="center", baseline="bottom", dy=-4, fontSize=14).encode(
+        labels = base.mark_text(align="center", baseline="bottom", dy=-4, fontSize=14).encode(
             x=alt.X("product_type:N", sort=ALL_PRODUCTS_UI),
             y=alt.Y("units:Q"),
-            text="units:Q"
+            text=alt.Text("units:Q")
         )
-        st.altair_chart(bars + labels, use_container_width=True)
+
+        layered = alt.layer(bars, labels)  # << แก้จุดที่เคยใช้ bars + labels
+        st.altair_chart(layered, use_container_width=True)
 
         st.dataframe(df[["product_type","units"]], use_container_width=True, hide_index=True)
 
@@ -387,11 +387,12 @@ if page == "หน้าหลัก":
             with b2:
                 if st.button("➖ เบิกออกจากคลัง", use_container_width=True):
                     if product_ui == "Cryo":
-                        # หักทุกกรุ๊ปตามลำดับ PRC -> LPRC -> FFP -> PC
                         priority = ["PRC","LPRC","FFP","PC"]
+                        remain_all = qty
                         for bt in ["A","B","O","AB"]:
-                            remain = qty
+                            if remain_all <= 0: break
                             dist_bt = normalize_products(get_stock_by_blood(bt))
+                            remain = remain_all
                             for p in priority:
                                 have = int(dist_bt.get(p,0))
                                 if have <= 0: 
@@ -401,7 +402,7 @@ if page == "หน้าหลัก":
                                     adjust_stock(bt, UI_TO_DB[p], -take, actor=st.session_state["username"] or "admin",
                                                  note=note or "cryo-outbound")
                                     remain -= take
-                                if remain == 0: break
+                            remain_all = remain
                         st.session_state["flash"] = {"type":"success","text":"เบิก Cryo แล้ว (หักทุกกรุ๊ป) ✅","until": time.time()+FLASH_SECONDS}
                         _safe_rerun()
                     else:
@@ -430,7 +431,7 @@ elif page == "กรอกเลือด":
                 component = st.selectbox("Blood Components", ["LPRC","PRC","FFP","Cryo","PC"])
             with c2:
                 exp_date = st.date_input("Exp date", value=date.today())
-                status = st.selectbox("Status", STATUS_OPTIONS, index=0)
+                status = st.selectbox("Status", ["ว่าง","จอง","จำหน่าย","Exp","หลุดจอง"])
                 note = st.text_input("บันทึก")
             submitted = st.form_submit_button("บันทึกรายการ", use_container_width=True)
 
