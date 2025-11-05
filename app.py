@@ -29,6 +29,22 @@ h1,h2,h3{letter-spacing:.2px}
 [data-testid="stSidebar"]{background:#2e343a;}
 [data-testid="stSidebar"] .sidebar-title{color:#e5e7eb;font-weight:800;font-size:1.06rem;margin:6px 0 10px 4px}
 
+/* --- User card (แสดงชื่อบนหัวเมนู) --- */
+[data-testid="stSidebar"] .user-card{
+  display:flex; align-items:center; gap:.8rem;
+  background:linear-gradient(135deg,#39424a,#2f343a);
+  border:1px solid #475569; border-radius:14px; padding:.75rem .9rem; margin:.5rem .2rem 1rem .2rem;
+  box-shadow:0 8px 22px rgba(0,0,0,.25);
+}
+[data-testid="stSidebar"] .user-avatar{
+  width:40px; height:40px; border-radius:999px; background:#ef4444; color:#fff; font-weight:900;
+  display:flex; align-items:center; justify-content:center; letter-spacing:.5px;
+  box-shadow:0 0 0 3px rgba(239,68,68,.25);
+}
+[data-testid="stSidebar"] .user-meta{display:flex; flex-direction:column; line-height:1.1}
+[data-testid="stSidebar"] .user-meta .label{font-size:.75rem; color:#cbd5e1}
+[data-testid="stSidebar"] .user-meta .name{font-size:1rem; color:#fff; font-weight:800}
+
 /* ปุ่มเมนูใน sidebar */
 [data-testid="stSidebar"] .stButton>button{
   width:100%; background:#ffffff; color:#111827; border:1px solid #cbd5e1;
@@ -73,7 +89,7 @@ BAG_MAX      = 20
 CRITICAL_MAX = 4
 YELLOW_MAX   = 15
 AUTH_PASSWORD = "1234"
-FLASH_SECONDS = 2.5   # ระยะเวลาที่โชว์กล่องสถานะ
+FLASH_SECONDS = 2.5   # เวลาโชว์แถบแจ้งเตือนมุมขวา
 
 # ============ STATE ============
 def _init_state():
@@ -81,8 +97,7 @@ def _init_state():
     st.session_state.setdefault("username", "")
     st.session_state.setdefault("page", "หน้าหลัก")
     st.session_state.setdefault("selected_bt", None)
-    # flash banner: {"type": "...", "text": "...", "until": epoch_seconds}
-    st.session_state.setdefault("flash", None)
+    st.session_state.setdefault("flash", None)   # {"type","text","until"}
     if "entries" not in st.session_state:
         st.session_state["entries"] = pd.DataFrame(
             columns=["ID","หมู่เลือด","รหัส","ว่าง","จอง","จำหน่าย","หมดอายุ","ค่าสถานะ"]
@@ -91,10 +106,8 @@ _init_state()
 
 # ============ HELPERS ============
 def _safe_rerun():
-    try:
-        st.rerun()
-    except Exception:
-        st.experimental_rerun()
+    try: st.rerun()
+    except Exception: st.experimental_rerun()
 
 def compute_bag(total: int):
     t = max(0, int(total))
@@ -204,6 +217,23 @@ if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
 
 # ============ SIDEBAR ============
 with st.sidebar:
+    # การ์ดแสดงชื่อบนหัวเมนู (ถ้า login แล้ว)
+    if st.session_state.get("logged_in"):
+        name = (st.session_state.get("username") or "staff").strip()
+        initials = (name[:2] or "ST").upper()
+        st.markdown(
+            f"""
+            <div class="user-card">
+              <div class="user-avatar">{initials}</div>
+              <div class="user-meta">
+                <span class="label">เข้าสู่ระบบสำเร็จ</span>
+                <span class="name">{name}</span>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
     st.markdown('<div class="sidebar-title">เมนู</div>', unsafe_allow_html=True)
 
     if st.button("หน้าหลัก", key="nav_home", use_container_width=True):
@@ -229,7 +259,6 @@ with st.sidebar:
                 st.session_state["logged_in"] = True
                 st.session_state["username"] = (u or "").strip() or "staff"
                 st.session_state["page"] = "หน้าหลัก"
-                # ตั้ง flash โดยไม่หน่วงเวลา
                 st.session_state["flash"] = {
                     "type": "success",
                     "text": f"เข้าสู่ระบบสำเร็จ: {st.session_state['username']}",
@@ -247,13 +276,10 @@ with st.sidebar:
         _safe_rerun()
 
 # ============ HEADER ============
-H1, H2 = st.columns([3,1])
-with H1:
-    st.title("Blood Stock Real-time Monitor")
-    st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+st.title("Blood Stock Real-time Monitor")
+st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 
-# แสดง Flash Banner แบบ fixed มุมขวา "ลดลงมาจากขอบบน"
-# ไม่ใช้ sleep — ใช้ timestamp until เพื่อตัดทิ้งเอง
+# แถบแจ้งสถานะมุมขวา (fixed) โชว์ 2.5 วิ แล้วหายเอง
 if st.session_state.get("flash"):
     now = time.time()
     data = st.session_state["flash"]
@@ -267,16 +293,9 @@ if st.session_state.get("flash"):
         st.markdown(
             f"""
             <div style="
-                position:fixed;
-                top:90px;            /* ลดลงมาจากขอบบนให้เห็นชัด */
-                right:24px;
-                z-index:9999;
-                background:{color};
-                color:#fff;
-                padding:.70rem 1.0rem;
-                border-radius:12px;
-                font-weight:800;
-                box-shadow:0 10px 24px rgba(0,0,0,.18);
+                position:fixed; top:90px; right:24px; z-index:9999;
+                background:{color}; color:#fff; padding:.70rem 1.0rem;
+                border-radius:12px; font-weight:800; box-shadow:0 10px 24px rgba(0,0,0,.18);
                 letter-spacing:.2px;">
                 {data.get("text","")}
             </div>
@@ -284,7 +303,7 @@ if st.session_state.get("flash"):
             unsafe_allow_html=True
         )
     else:
-        st.session_state["flash"] = None  # หมดเวลา — ลบออก
+        st.session_state["flash"] = None
 
 # ============ PAGES ============
 page = st.session_state["page"]
