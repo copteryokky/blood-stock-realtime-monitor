@@ -5,18 +5,19 @@ import altair as alt
 import streamlit as st
 from streamlit.components.v1 import html as st_html
 
+# ===== optional autorefresh =====
 try:
     from streamlit_autorefresh import st_autorefresh
 except Exception:
     def st_autorefresh(*args, **kwargs): return None
 
+# ===== DB funcs =====
 from db import init_db, get_all_status, get_stock_by_blood, adjust_stock
 
 # ============ PAGE / THEME ============
 st.set_page_config(page_title="Blood Stock Real-time Monitor", page_icon="🩸", layout="wide")
 st.markdown("""
 <style>
-/* spacing ทั่วไป */
 .block-container{padding-top:1.0rem;}
 h1,h2,h3{letter-spacing:.2px}
 
@@ -24,24 +25,19 @@ h1,h2,h3{letter-spacing:.2px}
 .badge{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .5rem;border-radius:999px;background:#f3f4f6}
 .legend-dot{width:.7rem;height:.7rem;border-radius:999px;display:inline-block}
 
-/* ===== Sidebar (ทำให้เมนูเห็นชัด) ===== */
+/* ===== Sidebar (ดูชัดและเสถียร) ===== */
 [data-testid="stSidebar"]{background:#2e343a;}
 [data-testid="stSidebar"] .sidebar-title{color:#e5e7eb;font-weight:800;font-size:1.06rem;margin:6px 0 10px 4px}
 
-/* ปุ่มทั่วไปใน sidebar: พื้นขาว ตัวอักษรดำ ขอบเทา (มองเห็นชัด) */
+/* ปุ่มเมนูใน sidebar */
 [data-testid="stSidebar"] .stButton>button{
   width:100%; background:#ffffff; color:#111827; border:1px solid #cbd5e1;
   border-radius:12px; font-weight:700; justify-content:flex-start;
 }
 [data-testid="stSidebar"] .stButton>button:hover{background:#f3f4f6}
 
-/* ปุ่ม active (เราใส่เอง) */
-[data-active="1"]>div>button{
-  background:#6f42c1 !important; color:#ffffff !important; border:0 !important;
-}
-
-/* ช่องกรอก login ใน sidebar ให้อ่านง่าย */
-[data-testid="stSidebar"] input, [data-testid="stSidebar"] textarea{
+/* ช่องกรอก login ใน sidebar */
+[data-testid="stSidebar"] input{
   background:#ffffff !important; color:#111827 !important;
   border:1px solid #cbd5e1 !important; border-radius:10px !important;
   font-weight:600;
@@ -78,6 +74,12 @@ def _init_state():
 _init_state()
 
 # ============ HELPERS ============
+def _safe_rerun():
+    try:
+        st.rerun()
+    except Exception:
+        st.experimental_rerun()
+
 def compute_bag(total: int):
     t = max(0, int(total))
     if t <= CRITICAL_MAX: status, label = "red", "วิกฤตใกล้หมด"
@@ -188,23 +190,17 @@ if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
 with st.sidebar:
     st.markdown('<div class="sidebar-title">เมนู</div>', unsafe_allow_html=True)
 
-    def btn(label, key, active=False):
-        # ใช้ data-active เพื่อทำปุ่ม active ม่วง
-        att = "1" if active else "0"
-        spot = st.container()
-        with spot:
-            clicked = st.button(f"{label}", key=key, use_container_width=True)
-        spot.container().markdown(
-            f"<div data-active='{att}'></div>", unsafe_allow_html=True
-        )
-        if clicked:
-            st.session_state["page"] = label
-            st.experimental_rerun()
+    # ปุ่มเมนูแบบเรียบง่าย + rerun ที่เสถียร
+    if st.button("หน้าหลัก", key="nav_home", use_container_width=True):
+        st.session_state["page"] = "หน้าหลัก"; _safe_rerun()
 
-    btn("หน้าหลัก", "nav_home", st.session_state["page"]=="หน้าหลัก")
-    btn("กรอกเลือด", "nav_entry", st.session_state["page"]=="กรอกเลือด")
-    btn("เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ",
-        "nav_auth", st.session_state["page"] in ["เข้าสู่ระบบ","ออกจากระบบ"])
+    if st.button("กรอกเลือด", key="nav_entry", use_container_width=True):
+        st.session_state["page"] = "กรอกเลือด"; _safe_rerun()
+
+    if st.button("เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ",
+                 key="nav_auth", use_container_width=True):
+        st.session_state["page"] = "เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ"
+        _safe_rerun()
 
     # ฟอร์มล็อกอินใน sidebar
     if st.session_state["page"] == "เข้าสู่ระบบ" and not st.session_state["logged_in"]:
@@ -220,7 +216,7 @@ with st.sidebar:
                 st.session_state["username"] = (u or "").strip() or "staff"
                 st.session_state["page"] = "หน้าหลัก"
                 st.toast("เข้าสู่ระบบสำเร็จ ✅")
-                st.experimental_rerun()
+                _safe_rerun()
             else:
                 st.error("รหัสผ่านไม่ถูกต้อง (password = 1234)")
 
@@ -228,7 +224,7 @@ with st.sidebar:
         st.session_state["logged_in"] = False
         st.session_state["username"] = ""
         st.session_state["page"] = "หน้าหลัก"
-        st.experimental_rerun()
+        _safe_rerun()
 
 # ============ HEADER ============
 H1, H2 = st.columns([3,1])
@@ -236,14 +232,13 @@ with H1:
     st.title("Blood Stock Real-time Monitor")
     st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 with H2:
-    # ไม่แสดงกล่องสีน้ำเงินอีกแล้ว
     if st.session_state["logged_in"]:
         st.success(f"เข้าสู่ระบบ: {st.session_state['username']}")
 
 # ============ PAGES ============
 page = st.session_state["page"]
 
-# ---------- หน้าหลัก ----------
+# ---------- หน้า: หน้าหลัก ----------
 if page == "หน้าหลัก":
     c1, c2, c3 = st.columns(3)
     c1.markdown('<span class="badge"><span class="legend-dot" style="background:#ef4444"></span> วิกฤตใกล้หมด 0–4</span>', unsafe_allow_html=True)
@@ -262,6 +257,7 @@ if page == "หน้าหลัก":
             st_html(bag_svg(bt, total, dist), height=270, scrolling=False)
             if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
                 st.session_state["selected_bt"] = bt
+                _safe_rerun()
 
     st.divider()
     sel = st.session_state.get("selected_bt")
@@ -319,7 +315,7 @@ if page == "หน้าหลัก":
                     else:
                         adjust_stock(sel, product_db, add, actor=st.session_state["username"] or "admin", note=note or "inbound")
                         if add < qty: st.info(f"นำเข้าได้เพียง {add} หน่วย (จำกัดเต็มคลัง 20)")
-                        st.toast("บันทึกการนำเข้าแล้ว", icon="✅"); st.rerun()
+                        st.toast("บันทึกการนำเข้าแล้ว", icon="✅"); _safe_rerun()
             with b2:
                 if st.button("➖ เบิกออกจากคลัง", use_container_width=True):
                     take = min(qty, current_by_product)
@@ -328,11 +324,9 @@ if page == "หน้าหลัก":
                     else:
                         adjust_stock(sel, product_db, -take, actor=st.session_state["username"] or "admin", note=note or "outbound")
                         if take < qty: st.info(f"ทำการเบิกได้เพียง {take} หน่วย")
-                        st.toast("บันทึกการเบิกแล้ว", icon="✅"); st.rerun()
-        else:
-            st.caption(" ")
+                        st.toast("บันทึกการเบิกแล้ว", icon="✅"); _safe_rerun()
 
-# ---------- กรอกเลือด ----------
+# ---------- หน้า: กรอกเลือด ----------
 elif page == "กรอกเลือด":
     st.subheader("กรอกเลือด")
     if not st.session_state["logged_in"]:
