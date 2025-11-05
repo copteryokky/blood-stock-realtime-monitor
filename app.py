@@ -29,7 +29,7 @@ h1,h2,h3{letter-spacing:.2px}
 [data-testid="stSidebar"]{background:#2e343a;}
 [data-testid="stSidebar"] .sidebar-title{color:#e5e7eb;font-weight:800;font-size:1.06rem;margin:6px 0 10px 4px}
 
-/* --- User card (แสดงชื่อบนหัวเมนู) --- */
+/* --- User card --- */
 [data-testid="stSidebar"] .user-card{
   display:flex; align-items:center; gap:.8rem;
   background:linear-gradient(135deg,#39424a,#2f343a);
@@ -52,26 +52,18 @@ h1,h2,h3{letter-spacing:.2px}
 }
 [data-testid="stSidebar"] .stButton>button:hover{background:#f3f4f6}
 
-/* ====== ฟอร์ม LOGIN: ให้เห็นชัด ====== */
+/* ฟอร์ม LOGIN ให้เห็นชัด */
 [data-testid="stSidebar"] label{ color:#f3f4f6 !important; font-weight:700; }
-
-[data-testid="stSidebar"] input[type="text"],
-[data-testid="stSidebar"] input[type="password"]{
-  background:#ffffff !important;
-  color:#111827 !important;
-  border:2px solid #e5e7eb !important;
-  border-radius:10px !important;
-  font-weight:600 !important;
-  caret-color:#111827 !important;
+[data-testid="stSidebar"] input[type="text"],[data-testid="stSidebar"] input[type="password"]{
+  background:#ffffff !important; color:#111827 !important;
+  border:2px solid #e5e7eb !important; border-radius:10px !important; font-weight:600 !important; caret-color:#111827 !important;
 }
 [data-testid="stSidebar"] input::placeholder{ color:#6b7280 !important; opacity:1 !important; }
 [data-testid="stSidebar"] input:focus{
-  outline:none !important;
-  border-color:#ef4444 !important;
-  box-shadow:0 0 0 3px rgba(239,68,68,.25) !important;
+  outline:none !important; border-color:#ef4444 !important; box-shadow:0 0 0 3px rgba(239,68,68,.25) !important;
 }
 
-/* ปุ่ม Login สีแดงชัด */
+/* ปุ่ม Login สีแดง */
 [data-testid="stSidebar"] button[kind="primary"]{
   width:100%; background:#ef4444 !important; color:#ffffff !important;
   border:none !important; border-radius:10px !important; font-weight:800;
@@ -89,7 +81,7 @@ BAG_MAX      = 20
 CRITICAL_MAX = 4
 YELLOW_MAX   = 15
 AUTH_PASSWORD = "1234"
-FLASH_SECONDS = 2.5   # เวลาโชว์แถบแจ้งเตือนมุมขวา
+FLASH_SECONDS = 2.5
 
 # ============ STATE ============
 def _init_state():
@@ -135,19 +127,24 @@ def normalize_products(rows):
     return d
 
 def derive_status(row: dict) -> str:
-    """คำนวณค่าสถานะจาก 4 คอลัมน์: หมดอายุ > จำหน่าย > จอง > ว่าง"""
+    """หมดอายุ > จำหน่าย > จอง > ว่าง"""
     try:
-        if str(row.get("หมดอายุ") or "").strip() not in ["", "0"]:
-            return "หมดอายุ"
-        if str(row.get("จำหน่าย") or "").strip() not in ["", "0"]:
-            return "จำหน่าย"
-        if str(row.get("จอง") or "").strip() not in ["", "0"]:
-            return "จอง"
-        if str(row.get("ว่าง") or "").strip() not in ["", "0"]:
-            return "ว่าง"
+        if str(row.get("หมดอายุ") or "").strip() not in ["", "0"]: return "หมดอายุ"
+        if str(row.get("จำหน่าย") or "").strip() not in ["", "0"]: return "จำหน่าย"
+        if str(row.get("จอง") or "").strip() not in ["", "0"]: return "จอง"
+        if str(row.get("ว่าง") or "").strip() not in ["", "0"]: return "ว่าง"
     except Exception:
         pass
     return "ว่าง"
+
+def color_status(val: str) -> str:
+    m = {
+        "ว่าง": "background-color:#22c55e; color:white; font-weight:700",
+        "จอง": "background-color:#f59e0b; color:white; font-weight:700",
+        "จำหน่าย": "background-color:#6b7280; color:white; font-weight:700",
+        "หมดอายุ": "background-color:#ef4444; color:white; font-weight:700",
+    }
+    return m.get(str(val).strip(), "")
 
 def bag_svg(blood_type: str, total: int, dist: dict) -> str:
     status, label, pct = compute_bag(total)
@@ -232,7 +229,6 @@ if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
 
 # ============ SIDEBAR ============
 with st.sidebar:
-    # การ์ดแสดงชื่อบนหัวเมนู (ถ้า login แล้ว)
     if st.session_state.get("logged_in"):
         name = (st.session_state.get("username") or "staff").strip()
         initials = (name[:2] or "ST").upper()
@@ -260,25 +256,19 @@ with st.sidebar:
         st.session_state["page"] = "เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ"
         _safe_rerun()
 
-    # ======= ฟอร์มล็อกอิน =======
     if st.session_state["page"] == "เข้าสู่ระบบ" and not st.session_state["logged_in"]:
         st.markdown("### เข้าสู่ระบบ")
         with st.form("login_form", clear_on_submit=False):
-            u = st.text_input("Username", key="login_user",
-                              placeholder="พิมพ์ชื่อผู้ใช้ได้เลย", label_visibility="visible")
-            p = st.text_input("Password", key="login_pwd",
-                              type="password", placeholder="ใส่รหัส = 1234", label_visibility="visible")
+            u = st.text_input("Username", key="login_user", placeholder="พิมพ์ชื่อผู้ใช้ได้เลย")
+            p = st.text_input("Password", key="login_pwd", type="password", placeholder="ใส่รหัส = 1234")
             sub = st.form_submit_button("Login", type="primary", use_container_width=True)
         if sub:
             if p == AUTH_PASSWORD:
                 st.session_state["logged_in"] = True
                 st.session_state["username"] = (u or "").strip() or "staff"
                 st.session_state["page"] = "หน้าหลัก"
-                st.session_state["flash"] = {
-                    "type": "success",
-                    "text": f"เข้าสู่ระบบสำเร็จ: {st.session_state['username']}",
-                    "until": time.time() + FLASH_SECONDS
-                }
+                st.session_state["flash"] = {"type":"success","text":f"เข้าสู่ระบบสำเร็จ: {st.session_state['username']}",
+                                             "until": time.time()+FLASH_SECONDS}
                 _safe_rerun()
             else:
                 st.error("รหัสผ่านไม่ถูกต้อง (password = 1234)")
@@ -294,7 +284,7 @@ with st.sidebar:
 st.title("Blood Stock Real-time Monitor")
 st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 
-# แถบแจ้งสถานะมุมขวา (fixed) โชว์ 2.5 วิ แล้วหายเอง
+# แถบแจ้งสถานะมุมขวา (fixed)
 if st.session_state.get("flash"):
     now = time.time()
     data = st.session_state["flash"]
@@ -441,9 +431,9 @@ elif page == "กรอกเลือด":
             st.session_state["flash"] = {"type":"success","text":"บันทึกรายการแล้ว ✅","until": time.time()+FLASH_SECONDS}
             _safe_rerun()
 
-        st.markdown("### ตารางสรุป")
+        st.markdown("### ตารางสรุป (แก้ไขได้)")
 
-        # ใช้ Data Editor เพื่อแก้ไขได้ทันที + เพิ่ม/ลบแถวได้
+        # Data Editor แก้ไขได้
         df = st.session_state["entries"].copy()
         for col in ["ID","หมู่เลือด","รหัส","ว่าง","จอง","จำหน่าย","หมดอายุ","ค่าสถานะ"]:
             if col not in df.columns:
@@ -455,17 +445,8 @@ elif page == "กรอกเลือด":
             use_container_width=True,
             hide_index=True,
             column_config={
-                "หมู่เลือด": st.column_config.SelectboxColumn(
-                    "หมู่เลือด", options=["A","B","O","AB"], required=True
-                ),
-                "ค่าสถานะ": st.column_config.TextColumn(
-                    "ค่าสถานะ", help="ระบบคำนวณให้อัตโนมัติจาก ว่าง/จอง/จำหน่าย/หมดอายุ", disabled=True
-                ),
-                # ใช้ NumberColumn ได้หากต้องการบังคับตัวเลขล้วน:
-                # "ว่าง": st.column_config.NumberColumn("ว่าง", step=1, min_value=0),
-                # "จอง": st.column_config.NumberColumn("จอง", step=1, min_value=0),
-                # "จำหน่าย": st.column_config.NumberColumn("จำหน่าย", step=1, min_value=0),
-                # "หมดอายุ": st.column_config.NumberColumn("หมดอายุ", step=1, min_value=0),
+                "หมู่เลือด": st.column_config.SelectboxColumn("หมู่เลือด", options=["A","B","O","AB"], required=True),
+                "ค่าสถานะ": st.column_config.TextColumn("ค่าสถานะ", help="ระบบคำนวณให้อัตโนมัติ", disabled=True),
             },
             key="entries_editor"
         )
@@ -481,18 +462,32 @@ elif page == "กรอกเลือด":
         with c_left:
             if st.button("บันทึกการแก้ไข", type="primary"):
                 st.session_state["entries"] = edited_df.reset_index(drop=True)
-                st.session_state["flash"] = {
-                    "type":"success", "text":"บันทึกการแก้ไขในตารางเรียบร้อย ✅",
-                    "until": time.time()+FLASH_SECONDS
-                }
+                st.session_state["flash"] = {"type":"success","text":"บันทึกการแก้ไขในตารางเรียบร้อย ✅","until": time.time()+FLASH_SECONDS}
                 _safe_rerun()
         with c_right:
-            if st.button("ล้างตาราง (รีเซ็ต)", help="ลบข้อมูลในตารางสรุปทั้งหมด"):
+            if st.button("ล้างตาราง (รีเซ็ต)"):
                 st.session_state["entries"] = pd.DataFrame(
                     columns=["ID","หมู่เลือด","รหัส","ว่าง","จอง","จำหน่าย","หมดอายุ","ค่าสถานะ"]
                 )
-                st.session_state["flash"] = {
-                    "type":"warning", "text":"ล้างตารางแล้ว",
-                    "until": time.time()+FLASH_SECONDS
-                }
+                st.session_state["flash"] = {"type":"warning","text":"ล้างตารางแล้ว","until": time.time()+FLASH_SECONDS}
                 _safe_rerun()
+
+        # ตารางอ่านอย่างเดียว พร้อม "สีค่าสถานะ"
+        st.markdown("### ตารางสรุป (แสดงสีสถานะ)")
+        if st.session_state["entries"].empty:
+            st.info("ยังไม่มีรายการ")
+        else:
+            show_df = st.session_state["entries"].copy()
+            # ให้แน่ใจว่ามีคอลัมน์ครบและสถานะอัปเดต
+            for col in ["ID","หมู่เลือด","รหัส","ว่าง","จอง","จำหน่าย","หมดอายุ","ค่าสถานะ"]:
+                if col not in show_df.columns:
+                    show_df[col] = ""
+            if not show_df.empty:
+                show_df["ค่าสถานะ"] = [
+                    derive_status(row._asdict() if hasattr(row, "_asdict") else row)
+                    for _, row in show_df.iterrows()
+                ]
+            st.dataframe(
+                show_df.style.applymap(color_status, subset=["ค่าสถานะ"]),
+                use_container_width=True, hide_index=True
+            )
