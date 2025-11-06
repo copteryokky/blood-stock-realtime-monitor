@@ -87,7 +87,7 @@ FLASH_SECONDS = 2.5
 # ===== Mapping / Orders =====
 RENAME_TO_UI    = {"Plasma": "FFP", "Platelets": "PC"}
 UI_TO_DB        = {"LPRC":"LPRC","PRC":"PRC","FFP":"Plasma","PC":"Platelets"}
-ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]  # ← ลำดับบังคับใช้ทุกกราฟ/ตาราง
+ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]
 
 STATUS_OPTIONS = ["ว่าง","จอง","จำหน่าย","Exp","หลุดจอง"]
 STATUS_COLOR   = {
@@ -101,7 +101,9 @@ def _init_state():
     st.session_state.setdefault("page", "หน้าหลัก")
     st.session_state.setdefault("selected_bt", None)
     st.session_state.setdefault("flash", None)
-    cols = ["Exp date","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
+
+    # เพิ่มคอลัมน์ 'เหลือ(วัน)' ถัดจาก Exp date
+    cols = ["Exp date","เหลือ(วัน)","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
     if "entries" not in st.session_state:
         st.session_state["entries"] = pd.DataFrame(columns=cols)
     else:
@@ -303,7 +305,7 @@ if page == "หน้าหลัก":
         with _M:
             st_html(bag_svg(sel, int(total_sel)), height=270, scrolling=False)
 
-        # เตรียมข้อมูลกราฟตามลำดับบังคับ
+        # สรุปจำนวนต่อชนิด + Cryo รวมทุกกรุ๊ป
         def _normalize(blood):
             rows = get_stock_by_blood(blood)
             d = {name: 0 for name in ALL_PRODUCTS_UI}
@@ -327,11 +329,10 @@ if page == "หน้าหลัก":
         df["color"] = df["units"].apply(color_for)
         ymax = max(10, int(df["units"].max() * 1.25))
 
-        # ===== กราฟแท่ง + ตัวเลขในแท่ง (เรียงตาม ALL_PRODUCTS_UI แบบตายตัว) =====
         bars = alt.Chart(df).mark_bar().encode(
             x=alt.X("product_type:N",
-                    sort=ALL_PRODUCTS_UI,   # << บังคับลำดับบนแกน X
-                    title="ประเภทผลิตภัณฑ์ (ตามลำดับ: LPRC, PRC, FFP, Cryo, PC)",
+                    sort=ALL_PRODUCTS_UI,
+                    title="ประเภทผลิตภัณฑ์ (ลำดับ: LPRC, PRC, FFP, Cryo, PC)",
                     axis=alt.Axis(labelAngle=0, labelFontSize=15, titleFontSize=15,
                                   labelColor="#111827", titleColor="#111827")),
             y=alt.Y("units:Q", title="จำนวนหน่วย (unit)",
@@ -342,82 +343,15 @@ if page == "หน้าหลัก":
             tooltip=[alt.Tooltip("product_type:N", title="ประเภท"),
                      alt.Tooltip("units:Q", title="จำนวน")]
         )
-
-        # ตัวเลขอยู่กลางแท่ง (ใช้ sort เดียวกัน)
-        text = alt.Chart(df).mark_text(
-            align="center", baseline="middle", dy=0,
-            fontSize=16, fill="#111827"
-        ).encode(
+        text = alt.Chart(df).mark_text(align="center", baseline="middle", dy=0,
+                                       fontSize=16, fill="#111827").encode(
             x=alt.X("product_type:N", sort=ALL_PRODUCTS_UI),
-            y="units:Q",
-            text="units:Q"
+            y="units:Q", text="units:Q"
         )
-
         chart = (bars + text).properties(height=420).configure_view(strokeOpacity=0)
         st.altair_chart(chart, use_container_width=True)
 
-        # ตารางเรียงตามลำดับเดียวกัน
-        df_table = df.copy().sort_values("product_type", key=lambda s: s.map({k:i for i,k in enumerate(ALL_PRODUCTS_UI)}))
-        st.dataframe(df_table[["product_type","units"]], use_container_width=True, hide_index=True)
-
-        # ===== ปรับปรุงคลัง =====
-        if st.session_state["logged_in"]:
-            st.markdown("#### ปรับปรุงคลัง (ต้องล็อกอิน)")
-            c1,c2,c3 = st.columns([1,1,2])
-            with c1:
-                product_ui = st.selectbox("ประเภทผลิตภัณฑ์", ALL_PRODUCTS_UI)
-            with c2:
-                qty = int(st.number_input("จำนวน (หน่วย)", min_value=1, max_value=1000, value=1, step=1))
-            with c3:
-                note = st.text_input("หมายเหตุ", placeholder="เหตุผลการทำรายการ เช่น นำเข้า/เบิก")
-
-            current_by_product = int(dist_sel.get(product_ui, 0))
-            b1,b2 = st.columns(2)
-            with b1:
-                if st.button("➕ นำเข้าเข้าคลัง", use_container_width=True, disabled=(product_ui=="Cryo")):
-                    if product_ui == "Cryo":
-                        st.warning("Cryo คำนวณจากยอดรวมทุกกรุ๊ป ไม่สามารถนำเข้าโดยตรงได้")
-                    else:
-                        product_db = UI_TO_DB[product_ui]
-                        space = max(0, BAG_MAX - min(int(total_sel), BAG_MAX))
-                        add = min(qty, space)
-                        if add <= 0:
-                            st.warning("เต็มคลังแล้ว (20/20)")
-                        else:
-                            adjust_stock(sel, product_db, add, actor=st.session_state["username"] or "admin", note=note or "inbound")
-                            if add < qty: st.info(f"นำเข้าได้เพียง {add} หน่วย (จำกัดเต็มคลัง 20)")
-                            st.session_state["flash"] = {"type":"success","text":"บันทึกการนำเข้าแล้ว ✅","until": time.time()+FLASH_SECONDS}
-                            _safe_rerun()
-            with b2:
-                if st.button("➖ เบิกออกจากคลัง", use_container_width=True):
-                    if product_ui == "Cryo":
-                        priority = ["PRC","LPRC","FFP","PC"]
-                        remain_all = qty
-                        for bt in ["A","B","O","AB"]:
-                            if remain_all <= 0: break
-                            dist_bt = normalize_products(get_stock_by_blood(bt))
-                            for p in priority:
-                                have = int(dist_bt.get(p,0))
-                                if have <= 0: continue
-                                take = min(remain_all, have)
-                                if take > 0:
-                                    adjust_stock(bt, UI_TO_DB[p], -take, actor=st.session_state["username"] or "admin",
-                                                 note=note or "cryo-outbound")
-                                    remain_all -= take
-                                if remain_all == 0: break
-                        st.session_state["flash"] = {"type":"success","text":"เบิก Cryo แล้ว (หักทุกกรุ๊ป) ✅","until": time.time()+FLASH_SECONDS}
-                        _safe_rerun()
-                    else:
-                        product_db = UI_TO_DB[product_ui]
-                        have = current_by_product
-                        take = min(qty, have)
-                        if take <= 0:
-                            st.warning(f"ไม่มี {product_ui} เพียงพอสำหรับการเบิก")
-                        else:
-                            adjust_stock(sel, product_db, -take, actor=st.session_state["username"] or "admin", note=note or "outbound")
-                            if take < qty: st.info(f"ทำการเบิกได้เพียง {take} หน่วย")
-                            st.session_state["flash"] = {"type":"success","text":"บันทึกการเบิกแล้ว ✅","until": time.time()+FLASH_SECONDS}
-                            _safe_rerun()
+        st.dataframe(df[["product_type","units"]], use_container_width=True, hide_index=True)
 
 # ---------- หน้า: กรอกเลือด ----------
 elif page == "กรอกเลือด":
@@ -427,22 +361,36 @@ elif page == "กรอกเลือด":
     else:
         with st.form("blood_entry_form", clear_on_submit=True):
             c1,c2 = st.columns(2)
-            with c1: unit_number = st.text_input("Unit number")
-            with c2: exp_date    = st.date_input("Exp date", value=date.today())
+            with c1:
+                unit_number = st.text_input("Unit number")
+            with c2:
+                exp_date = st.date_input("Exp date", value=date.today())
             c3,c4 = st.columns(2)
-            with c3: group  = st.selectbox("Group", ["A","B","O","AB"])
-            with c4: status = st.selectbox("Status", STATUS_OPTIONS, index=0)
+            with c3:
+                group = st.selectbox("Group", ["A","B","O","AB"])
+            with c4:
+                status = st.selectbox("Status", STATUS_OPTIONS, index=0)
             c5,c6 = st.columns(2)
-            with c5: component = st.selectbox("Blood Components", ALL_PRODUCTS_UI)
-            with c6: note = st.text_input("บันทึก")
+            with c5:
+                component = st.selectbox("Blood Components", ["LPRC","PRC","FFP","Cryo","PC"])
+            with c6:
+                note = st.text_input("บันทึก")
             submitted = st.form_submit_button("บันทึกรายการ", use_container_width=True)
 
         if submitted:
             exp_str = exp_date.strftime("%Y/%m/%d")
+            # คำนวณวันคงเหลือทันทีตอนบันทึก
+            days_left = (exp_date - date.today()).days
             new_row = {
-                "Exp date": exp_str, "Unit number": unit_number, "Group": group,
-                "Blood Components": component, "Status": status,
-                "ค่าสถานะ": status, "สถานะ(สี)": STATUS_COLOR.get(status, status), "บันทึก": note,
+                "Exp date": exp_str,
+                "เหลือ(วัน)": str(days_left),
+                "Unit number": unit_number,
+                "Group": group,
+                "Blood Components": component,
+                "Status": status,
+                "ค่าสถานะ": status,
+                "สถานะ(สี)": STATUS_COLOR.get(status, status),
+                "บันทึก": note,
             }
             st.session_state["entries"] = pd.concat(
                 [st.session_state["entries"], pd.DataFrame([new_row])], ignore_index=True
@@ -452,11 +400,18 @@ elif page == "กรอกเลือด":
 
         st.markdown("### ตารางสรุป (แก้ไขได้)")
         df_vis = st.session_state["entries"].copy()
-        _tmp = pd.to_datetime(df_vis["Exp date"], errors="coerce")
-        df_vis["Exp date"] = _tmp.dt.date
+
+        # แปลงวันที่ + คำนวณ 'เหลือ(วัน)' ทุกครั้งที่รีเฟรช เพื่อให้ตรงกับวันที่ปัจจุบัน
+        _exp = pd.to_datetime(df_vis["Exp date"], errors="coerce")
+        df_vis["Exp date"] = _exp.dt.date
+        today = date.today()
+        df_vis["เหลือ(วัน)"] = _exp.dt.date.apply(
+            lambda d: "" if pd.isna(pd.to_datetime(d, errors="coerce")) else str((d - today).days)
+        )
 
         col_cfg = {
             "Exp date": st.column_config.DateColumn("Exp date", format="YYYY/MM/DD"),
+            "เหลือ(วัน)": st.column_config.TextColumn("วันหมดอายุนับถอยหลัง (วัน)", disabled=True),
             "Unit number": st.column_config.TextColumn("Unit number"),
             "Group": st.column_config.SelectboxColumn("Group", options=["A","B","O","AB"]),
             "Blood Components": st.column_config.SelectboxColumn("Blood Components", options=ALL_PRODUCTS_UI),
@@ -466,23 +421,35 @@ elif page == "กรอกเลือด":
             "บันทึก": st.column_config.TextColumn("บันทึก"),
         }
 
-        edited = st.data_editor(df_vis, num_rows="dynamic", use_container_width=True, hide_index=True, column_config=col_cfg)
+        edited = st.data_editor(
+            df_vis, num_rows="dynamic", use_container_width=True, hide_index=True, column_config=col_cfg
+        )
 
+        # เซฟกลับ + คำนวณ 'เหลือ(วัน)' จาก Exp date เสมอ
         if not edited.equals(df_vis):
             out = edited.copy()
+
             def _d2str(x):
                 if pd.isna(x): return ""
                 if isinstance(x, (datetime, pd.Timestamp)): return x.date().strftime("%Y/%m/%d")
                 if isinstance(x, date): return x.strftime("%Y/%m/%d")
-                try: return pd.to_datetime(x, errors="coerce").date().strftime("%Y/%m/%d")
-                except Exception: return str(x)
+                try:
+                    return pd.to_datetime(x, errors="coerce").date().strftime("%Y/%m/%d")
+                except Exception:
+                    return str(x)
 
             out["Exp date"] = out["Exp date"].apply(_d2str)
+
+            # คำนวณวันคงเหลือตาม Exp date ที่แก้ไข
+            _exp2 = pd.to_datetime(out["Exp date"], errors="coerce").dt.date
+            out["เหลือ(วัน)"] = _exp2.apply(lambda d: "" if pd.isna(pd.to_datetime(d, errors="coerce")) else str((d - date.today()).days))
+
             out["ค่าสถานะ"] = out["Status"].astype(str)
             out["สถานะ(สี)"] = out["Status"].map(lambda s: STATUS_COLOR.get(s, s))
-            for c in ["Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]:
+            for c in ["Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก","เหลือ(วัน)"]:
                 out[c] = out[c].astype(str).fillna("")
-            cols = ["Exp date","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
+
+            cols = ["Exp date","เหลือ(วัน)","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
             st.session_state["entries"] = out[cols].reset_index(drop=True)
             st.session_state["flash"] = {"type":"success","text":"อัปเดตตารางแล้ว ✅","until": time.time()+FLASH_SECONDS}
             _safe_rerun()
