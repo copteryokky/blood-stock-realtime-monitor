@@ -78,7 +78,7 @@ h1,h2,h3{letter-spacing:.2px}
 """, unsafe_allow_html=True)
 
 # ============ CONFIG ============
-BAG_MAX       = 20          # max ถุงต่อกรุ๊ป
+BAG_MAX       = 20
 CRITICAL_MAX  = 4
 YELLOW_MAX    = 15
 AUTH_PASSWORD = "1234"
@@ -87,15 +87,11 @@ FLASH_SECONDS = 2.5
 # ===== Mapping / Orders =====
 RENAME_TO_UI    = {"Plasma": "FFP", "Platelets": "PC"}
 UI_TO_DB        = {"LPRC":"LPRC","PRC":"PRC","FFP":"Plasma","PC":"Platelets"}
-ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]  # << ลำดับที่ต้องการ ใช้ทุกที่
+ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]  # ← ลำดับบังคับใช้ทุกกราฟ/ตาราง
 
 STATUS_OPTIONS = ["ว่าง","จอง","จำหน่าย","Exp","หลุดจอง"]
 STATUS_COLOR   = {
-    "ว่าง": "🟢 ว่าง",
-    "จอง": "🟠 จอง",
-    "จำหน่าย": "⚫ จำหน่าย",
-    "Exp": "🔴 Exp",
-    "หลุดจอง": "🔵 หลุดจอง",
+    "ว่าง": "🟢 ว่าง", "จอง": "🟠 จอง", "จำหน่าย": "⚫ จำหน่าย", "Exp": "🔴 Exp", "หลุดจอง": "🔵 หลุดจอง",
 }
 
 # ============ STATE ============
@@ -105,7 +101,6 @@ def _init_state():
     st.session_state.setdefault("page", "หน้าหลัก")
     st.session_state.setdefault("selected_bt", None)
     st.session_state.setdefault("flash", None)
-
     cols = ["Exp date","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
     if "entries" not in st.session_state:
         st.session_state["entries"] = pd.DataFrame(columns=cols)
@@ -152,33 +147,26 @@ def get_global_cryo():
                 total += int(r.get("units",0))
     return total
 
-# ===== SVG bag (ไม่มีตัวเลข unit ใต้ถุง) =====
+# ===== SVG bag (ไม่มี unit ใต้ถุง) =====
 def bag_svg(blood_type: str, total: int) -> str:
     status, _label, pct = compute_bag(total, BAG_MAX)
     fill = bag_color(status)
     letter_fill   = {"A":"#facc15","B":"#f472b6","O":"#60a5fa","AB":"#ffffff"}.get(blood_type, "#ffffff")
     letter_stroke = "#111827" if blood_type != "AB" else "#6b7280"
-
-    inner_h  = 148.0; inner_y0 = 40.0
-    water_h  = inner_h * pct / 100.0
-    water_y  = inner_y0 + (inner_h - water_h)
-    gid      = f"g_{blood_type}"
+    inner_h, inner_y0 = 148.0, 40.0
+    water_h = inner_h * pct / 100.0
+    water_y = inner_y0 + (inner_h - water_h)
+    gid = f"g_{blood_type}"
     wave_amp = 5 + 6*(pct/100)
-    wave_path = (
-        f"M24,{water_y:.1f} Q54,{water_y - wave_amp:.1f} 84,{water_y:.1f} "
-        f"Q114,{water_y + wave_amp:.1f} 144,{water_y:.1f} L144,198 24,198 Z"
-    )
-    edge_color = "#dc2626"
-
+    wave_path = f"M24,{water_y:.1f} Q54,{water_y-wave_amp:.1f} 84,{water_y:.1f} Q114,{water_y+wave_amp:.1f} 144,{water_y:.1f} L144,198 24,198 Z"
+    edge = "#dc2626"
     return f"""
 <div>
   <style>
-    .bag-wrap{{display:flex;flex-direction:column;align-items:center;gap:10px;
-               font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial}}
+    .bag-wrap{{display:flex;flex-direction:column;align-items:center;gap:10px;font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial}}
     .bag{{transition:transform .18s ease, filter .18s ease}}
     .bag:hover{{transform:translateY(-2px); filter:drop-shadow(0 10px 22px rgba(0,0,0,.12));}}
   </style>
-
   <div class="bag-wrap">
     <svg class="bag" width="170" height="230" viewBox="0 0 168 206" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -187,41 +175,28 @@ def bag_svg(blood_type: str, total: int) -> str:
                    L144,172 C144,191 128,202 108,204 L56,204 C36,202 24,191 24,172 Z"/>
         </clipPath>
         <linearGradient id="liquid-{gid}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"  stop-color="{fill}" stop-opacity=".96"/>
+          <stop offset="0%" stop-color="{fill}" stop-opacity=".96"/>
           <stop offset="100%" stop-color="{fill}" stop-opacity=".86"/>
         </linearGradient>
         <linearGradient id="gloss-{gid}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"  stop-color="rgba(255,255,255,.75)"/>
+          <stop offset="0%" stop-color="rgba(255,255,255,.75)"/>
           <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
         </linearGradient>
       </defs>
-
       <circle cx="84" cy="10" r="7.5" fill="#eef2ff" stroke="#dbe0ea" stroke-width="3"/>
       <rect x="77.5" y="14" width="13" height="8" rx="3" fill="#e5e7eb"/>
-
       <g>
-        <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
-                 L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
-              fill="#ffffff" stroke="{edge_color}" stroke-width="3.2"
-              stroke-linejoin="round" stroke-linecap="round"/>
-        <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
-                 L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
+        <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34 L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
+              fill="#ffffff" stroke="{edge}" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34 L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
               fill="none" stroke="#7f1d1d" stroke-opacity=".18" stroke-width="6"/>
       </g>
-
-      <g clip-path="url(#clip-{gid})">
-        <path d="{wave_path}" fill="url(#liquid-{gid})"/>
-      </g>
+      <g clip-path="url(#clip-{gid})"><path d="{wave_path}" fill="url(#liquid-{gid})"/></g>
       <rect x="38" y="22" width="10" height="176" fill="url(#gloss-{gid})" opacity=".7" clip-path="url(#clip-{gid})"/>
-
-      <g>
-        <rect x="98" y="24" rx="10" ry="10" width="54" height="22" fill="#ffffff" stroke="#e5e7eb"/>
-        <text x="125" y="40" text-anchor="middle" font-size="12" fill="#374151">{BAG_MAX} max</text>
-      </g>
-
+      <g><rect x="98" y="24" rx="10" ry="10" width="54" height="22" fill="#fff" stroke="#e5e7eb"/>
+         <text x="125" y="40" text-anchor="middle" font-size="12" fill="#374151">{BAG_MAX} max</text></g>
       <text x="84" y="126" text-anchor="middle" font-size="32" font-weight="900"
-            style="paint-order: stroke fill" stroke="{letter_stroke}" stroke-width="4"
-            fill="{letter_fill}">{blood_type}</text>
+            style="paint-order:stroke fill" stroke="{letter_stroke}" stroke-width="4" fill="{letter_fill}">{blood_type}</text>
     </svg>
   </div>
 </div>
@@ -236,19 +211,14 @@ with st.sidebar:
     if st.session_state.get("logged_in"):
         name = (st.session_state.get("username") or "staff").strip()
         initials = (name[:2] or "ST").upper()
-        st.markdown(
-            f"""
-            <div class="user-card">
-              <div class="user-avatar">{initials}</div>
-              <div class="user-meta">
-                <span class="label">เข้าสู่ระบบสำเร็จ</span>
-                <span class="name">{name}</span>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
+        st.markdown(f"""
+        <div class="user-card">
+          <div class="user-avatar">{initials}</div>
+          <div class="user-meta">
+            <span class="label">เข้าสู่ระบบสำเร็จ</span>
+            <span class="name">{name}</span>
+          </div>
+        </div>""", unsafe_allow_html=True)
     st.markdown('<div class="sidebar-title">เมนู</div>', unsafe_allow_html=True)
     if st.button("หน้าหลัก", key="nav_home", use_container_width=True):
         st.session_state["page"] = "หน้าหลัก"; _safe_rerun()
@@ -256,8 +226,7 @@ with st.sidebar:
         st.session_state["page"] = "กรอกเลือด"; _safe_rerun()
     if st.button("เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ",
                  key="nav_auth", use_container_width=True):
-        st.session_state["page"] = "เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ"
-        _safe_rerun()
+        st.session_state["page"] = "เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ"; _safe_rerun()
 
     if st.session_state["page"] == "เข้าสู่ระบบ" and not st.session_state["logged_in"]:
         st.markdown("### เข้าสู่ระบบ")
@@ -287,18 +256,16 @@ with st.sidebar:
 st.title("Blood Stock Real-time Monitor")
 st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 
-# Flash แจ้งเตือน
+# Flash
 if st.session_state.get("flash"):
     now = time.time()
     data = st.session_state["flash"]
     if now < data.get("until", 0):
         color = {"success":"#16a34a","info":"#0ea5e9","warning":"#f59e0b","error":"#ef4444"}.get(data.get("type","success"),"#16a34a")
-        st.markdown(f"""
-        <div style="position:fixed; top:110px; right:24px; z-index:9999;
+        st.markdown(f"""<div style="position:fixed; top:110px; right:24px; z-index:9999;
                     background:{color}; color:#fff; padding:.7rem 1rem; border-radius:12px;
-                    font-weight:800; box-shadow:0 10px 24px rgba(0,0,0,.18)">
-            {data.get("text","")}
-        </div>""", unsafe_allow_html=True)
+                    font-weight:800; box-shadow:0 10px 24px rgba(0,0,0,.18)">{data.get("text","")}</div>""",
+                    unsafe_allow_html=True)
     else:
         st.session_state["flash"] = None
 
@@ -322,8 +289,7 @@ if page == "หน้าหลัก":
             st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
             st_html(bag_svg(bt, total), height=270, scrolling=False)
             if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
-                st.session_state["selected_bt"] = bt
-                _safe_rerun()
+                st.session_state["selected_bt"] = bt; _safe_rerun()
 
     st.divider()
     sel = st.session_state.get("selected_bt")
@@ -337,7 +303,7 @@ if page == "หน้าหลัก":
         with _M:
             st_html(bag_svg(sel, int(total_sel)), height=270, scrolling=False)
 
-        # เตรียมข้อมูลกราฟ (ตามลำดับที่กำหนด)
+        # เตรียมข้อมูลกราฟตามลำดับบังคับ
         def _normalize(blood):
             rows = get_stock_by_blood(blood)
             d = {name: 0 for name in ALL_PRODUCTS_UI}
@@ -351,9 +317,8 @@ if page == "หน้าหลัก":
         dist_sel["Cryo"] = get_global_cryo()
 
         df = pd.DataFrame([{"product_type":k, "units":int(v)} for k,v in dist_sel.items()])
-        order = pd.CategoricalDtype(ALL_PRODUCTS_UI, ordered=True)  # ใช้ลำดับนี้ทุกครั้ง
-        df["product_type"] = df["product_type"].astype(order)
-        df = df.sort_values("product_type").reset_index(drop=True)
+        order_dtype = pd.CategoricalDtype(ALL_PRODUCTS_UI, ordered=True)
+        df["product_type"] = df["product_type"].astype(order_dtype)
 
         def color_for(u):
             if u <= CRITICAL_MAX: return "#ef4444"
@@ -362,10 +327,11 @@ if page == "หน้าหลัก":
         df["color"] = df["units"].apply(color_for)
         ymax = max(10, int(df["units"].max() * 1.25))
 
-        # แท่ง + ตัวเลข “ภายในแท่ง” (ไม่หนา, อ่านง่าย)
-        bars = alt.Chart().mark_bar().encode(
+        # ===== กราฟแท่ง + ตัวเลขในแท่ง (เรียงตาม ALL_PRODUCTS_UI แบบตายตัว) =====
+        bars = alt.Chart(df).mark_bar().encode(
             x=alt.X("product_type:N",
-                    title="ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo, PC)",
+                    sort=ALL_PRODUCTS_UI,   # << บังคับลำดับบนแกน X
+                    title="ประเภทผลิตภัณฑ์ (ตามลำดับ: LPRC, PRC, FFP, Cryo, PC)",
                     axis=alt.Axis(labelAngle=0, labelFontSize=15, titleFontSize=15,
                                   labelColor="#111827", titleColor="#111827")),
             y=alt.Y("units:Q", title="จำนวนหน่วย (unit)",
@@ -376,18 +342,23 @@ if page == "หน้าหลัก":
             tooltip=[alt.Tooltip("product_type:N", title="ประเภท"),
                      alt.Tooltip("units:Q", title="จำนวน")]
         )
-        # ตัวเลขอยู่กลางแท่ง
-        text = alt.Chart().mark_text(
+
+        # ตัวเลขอยู่กลางแท่ง (ใช้ sort เดียวกัน)
+        text = alt.Chart(df).mark_text(
             align="center", baseline="middle", dy=0,
             fontSize=16, fill="#111827"
         ).encode(
-            x="product_type:N", y="units:Q", text="units:Q"
+            x=alt.X("product_type:N", sort=ALL_PRODUCTS_UI),
+            y="units:Q",
+            text="units:Q"
         )
 
-        chart = alt.layer(bars, text, data=df).properties(height=420).configure_view(strokeOpacity=0)
-
+        chart = (bars + text).properties(height=420).configure_view(strokeOpacity=0)
         st.altair_chart(chart, use_container_width=True)
-        st.dataframe(df[["product_type","units"]], use_container_width=True, hide_index=True)
+
+        # ตารางเรียงตามลำดับเดียวกัน
+        df_table = df.copy().sort_values("product_type", key=lambda s: s.map({k:i for i,k in enumerate(ALL_PRODUCTS_UI)}))
+        st.dataframe(df_table[["product_type","units"]], use_container_width=True, hide_index=True)
 
         # ===== ปรับปรุงคลัง =====
         if st.session_state["logged_in"]:
@@ -456,33 +427,22 @@ elif page == "กรอกเลือด":
     else:
         with st.form("blood_entry_form", clear_on_submit=True):
             c1,c2 = st.columns(2)
-            with c1:
-                unit_number = st.text_input("Unit number")
-            with c2:
-                exp_date = st.date_input("Exp date", value=date.today())
+            with c1: unit_number = st.text_input("Unit number")
+            with c2: exp_date    = st.date_input("Exp date", value=date.today())
             c3,c4 = st.columns(2)
-            with c3:
-                group = st.selectbox("Group", ["A","B","O","AB"])
-            with c4:
-                status = st.selectbox("Status", STATUS_OPTIONS, index=0)
+            with c3: group  = st.selectbox("Group", ["A","B","O","AB"])
+            with c4: status = st.selectbox("Status", STATUS_OPTIONS, index=0)
             c5,c6 = st.columns(2)
-            with c5:
-                component = st.selectbox("Blood Components", ALL_PRODUCTS_UI)
-            with c6:
-                note = st.text_input("บันทึก")
+            with c5: component = st.selectbox("Blood Components", ALL_PRODUCTS_UI)
+            with c6: note = st.text_input("บันทึก")
             submitted = st.form_submit_button("บันทึกรายการ", use_container_width=True)
 
         if submitted:
             exp_str = exp_date.strftime("%Y/%m/%d")
             new_row = {
-                "Exp date": exp_str,
-                "Unit number": unit_number,
-                "Group": group,
-                "Blood Components": component,
-                "Status": status,
-                "ค่าสถานะ": status,
-                "สถานะ(สี)": STATUS_COLOR.get(status, status),
-                "บันทึก": note,
+                "Exp date": exp_str, "Unit number": unit_number, "Group": group,
+                "Blood Components": component, "Status": status,
+                "ค่าสถานะ": status, "สถานะ(สี)": STATUS_COLOR.get(status, status), "บันทึก": note,
             }
             st.session_state["entries"] = pd.concat(
                 [st.session_state["entries"], pd.DataFrame([new_row])], ignore_index=True
@@ -506,9 +466,7 @@ elif page == "กรอกเลือด":
             "บันทึก": st.column_config.TextColumn("บันทึก"),
         }
 
-        edited = st.data_editor(
-            df_vis, num_rows="dynamic", use_container_width=True, hide_index=True, column_config=col_cfg
-        )
+        edited = st.data_editor(df_vis, num_rows="dynamic", use_container_width=True, hide_index=True, column_config=col_cfg)
 
         if not edited.equals(df_vis):
             out = edited.copy()
@@ -516,10 +474,8 @@ elif page == "กรอกเลือด":
                 if pd.isna(x): return ""
                 if isinstance(x, (datetime, pd.Timestamp)): return x.date().strftime("%Y/%m/%d")
                 if isinstance(x, date): return x.strftime("%Y/%m/%d")
-                try:
-                    return pd.to_datetime(x, errors="coerce").date().strftime("%Y/%m/%d")
-                except Exception:
-                    return str(x)
+                try: return pd.to_datetime(x, errors="coerce").date().strftime("%Y/%m/%d")
+                except Exception: return str(x)
 
             out["Exp date"] = out["Exp date"].apply(_d2str)
             out["ค่าสถานะ"] = out["Status"].astype(str)
@@ -527,7 +483,6 @@ elif page == "กรอกเลือด":
             for c in ["Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]:
                 out[c] = out[c].astype(str).fillna("")
             cols = ["Exp date","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
-            out = out[cols]
-            st.session_state["entries"] = out.reset_index(drop=True)
+            st.session_state["entries"] = out[cols].reset_index(drop=True)
             st.session_state["flash"] = {"type":"success","text":"อัปเดตตารางแล้ว ✅","until": time.time()+FLASH_SECONDS}
             _safe_rerun()
