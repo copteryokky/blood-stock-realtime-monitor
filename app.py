@@ -130,7 +130,7 @@ def compute_bag(total: int, max_cap=BAG_MAX):
     pct = max(0, min(100, int(round(100 * min(t, max_cap) / max_cap))))
     return status, label, pct
 
-# >>> สีถุงตามที่ขอ <<<
+# สีของของเหลวในถุงตามระดับสต็อก
 def bag_color(status: str) -> str:
     return {"green":"#22c55e", "yellow":"#f59e0b", "red":"#ef4444"}[status]
 
@@ -154,22 +154,29 @@ def get_global_cryo():
                 total += int(r.get("units",0))
     return total
 
-# ===== SVG ถุงเลือด (โชว์ XX unit ใต้ถุง) =====
+# ===== SVG ถุงเลือด (มี "ไอ" สีเลือดที่ขอบถุง) =====
 def bag_svg(blood_type: str, total: int) -> str:
     status, _label, pct = compute_bag(total, BAG_MAX)
     fill = bag_color(status)
-    letter_fill = {"A":"#facc15","B":"#f472b6","O":"#60a5fa","AB":"#ffffff"}.get(blood_type, "#ffffff")
+
+    # สีตัวอักษรกรุ๊ป
+    letter_fill   = {"A":"#facc15","B":"#f472b6","O":"#60a5fa","AB":"#ffffff"}.get(blood_type, "#ffffff")
     letter_stroke = "#111827" if blood_type != "AB" else "#6b7280"
 
-    inner_h = 148.0; inner_y0 = 40.0
-    water_h = inner_h * pct / 100.0
-    water_y = inner_y0 + (inner_h - water_h)
-    gid = f"g_{blood_type}"
+    # ระดับของเหลวในถุง
+    inner_h  = 148.0; inner_y0 = 40.0
+    water_h  = inner_h * pct / 100.0
+    water_y  = inner_y0 + (inner_h - water_h)
+    gid      = f"g_{blood_type}"
     wave_amp = 5 + 6*(pct/100)
     wave_path = (
         f"M24,{water_y:.1f} Q54,{water_y - wave_amp:.1f} 84,{water_y:.1f} "
         f"Q114,{water_y + wave_amp:.1f} 144,{water_y:.1f} L144,198 24,198 Z"
     )
+
+    # สีขอบและไอเรืองแสงสีเลือด
+    edge_color = "#dc2626"
+    glow1, glow2 = "#ef4444", "#dc2626"
 
     return f"""
 <div>
@@ -180,52 +187,70 @@ def bag_svg(blood_type: str, total: int) -> str:
     .bag:hover{{transform:translateY(-2px); filter:drop-shadow(0 10px 22px rgba(0,0,0,.12));}}
     .bag-caption{{text-align:center; margin-top:2px; font-weight:800}}
   </style>
+
   <div class="bag-wrap">
     <svg class="bag" width="170" height="230" viewBox="0 0 168 206" xmlns="http://www.w3.org/2000/svg">
       <defs>
+        <!-- คลิปภายในถุง -->
         <clipPath id="clip-{gid}">
           <path d="M24,40 C24,24 38,14 58,14 L110,14 C130,14 144,24 144,40
                    L144,172 C144,191 128,202 108,204 L56,204 C36,202 24,191 24,172 Z"/>
         </clipPath>
+
+        <!-- ของเหลว -->
         <linearGradient id="liquid-{gid}" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%"  stop-color="{fill}" stop-opacity=".96"/>
           <stop offset="100%" stop-color="{fill}" stop-opacity=".86"/>
         </linearGradient>
+
+        <!-- เงามันวาว -->
         <linearGradient id="gloss-{gid}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="rgba(255,255,255,.75)"/>
+          <stop offset="0%"  stop-color="rgba(255,255,255,.75)"/>
           <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
         </linearGradient>
-        <filter id="blood-smear-{gid}" x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="2.2"/>
+
+        <!-- ไอเรืองแสงสีเลือดที่ขอบถุง -->
+        <filter id="blood-glow-{gid}" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="{glow1}" flood-opacity="0.45"/>
+          <feDropShadow dx="0" dy="0" stdDeviation="2.5" flood-color="{glow2}" flood-opacity="0.85"/>
         </filter>
       </defs>
 
+      <!-- หัวถุง -->
       <circle cx="84" cy="10" r="7.5" fill="#eef2ff" stroke="#dbe0ea" stroke-width="3"/>
       <rect x="77.5" y="14" width="13" height="8" rx="3" fill="#e5e7eb"/>
 
+      <!-- ตัวถุง + ขอบ + ไอเลือด -->
       <g>
         <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
                  L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
-              fill="#ffffff" stroke="#7f1d1d" stroke-width="6" opacity=".15"/>
+              fill="#ffffff" stroke="{edge_color}" stroke-width="3.2"
+              stroke-linejoin="round" stroke-linecap="round"
+              filter="url(#blood-glow-{gid})"/>
         <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
                  L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
-              fill="#ffffff" stroke="#dc2626" stroke-width="3"/>
+              fill="none" stroke="#7f1d1d" stroke-opacity=".18" stroke-width="6"/>
       </g>
 
+      <!-- ของเหลว -->
       <g clip-path="url(#clip-{gid})">
         <path d="{wave_path}" fill="url(#liquid-{gid})"/>
       </g>
-      <rect x="38" y="22" width="10" height="176" fill="url(#gloss-{gid})" opacity=".7" clip-path="url(#clip-{gid})"/>
+      <rect x="38" y="22" width="10" height="176" fill="url(#gloss-{gid})" opacity=".7"
+            clip-path="url(#clip-{gid})"/>
 
+      <!-- ป้าย 20 max -->
       <g>
         <rect x="98" y="24" rx="10" ry="10" width="54" height="22" fill="#ffffff" stroke="#e5e7eb"/>
         <text x="125" y="40" text-anchor="middle" font-size="12" fill="#374151">{BAG_MAX} max</text>
       </g>
 
+      <!-- ตัวอักษรกรุ๊ป -->
       <text x="84" y="126" text-anchor="middle" font-size="32" font-weight="900"
-            style="paint-order: stroke fill" stroke="#111827" stroke-width="4"
+            style="paint-order: stroke fill" stroke="{letter_stroke}" stroke-width="4"
             fill="{letter_fill}">{blood_type}</text>
     </svg>
+
     <div class="bag-caption">{int(total)} unit</div>
   </div>
 </div>
@@ -366,7 +391,7 @@ if page == "หน้าหลัก":
         df["color"] = df["units"].apply(color_for)
         ymax = max(10, int(df["units"].max() * 1.25))
 
-        # Altair: layer(bar + text) ป้องกัน TypeError
+        # Altair: layer(bar + text) ป้องกัน TypeError จากบางเวอร์ชัน
         bars = alt.Chart().mark_bar().encode(
             x=alt.X("product_type:N", title="ประเภทผลิตภัณฑ์ (LPRC, PRC, FFP, Cryo=รวมทุกกรุ๊ป, PC)",
                     axis=alt.Axis(labelAngle=0,labelFontSize=14,titleFontSize=14,
