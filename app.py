@@ -153,7 +153,7 @@ def get_global_cryo():
                 total += int(r.get("units",0))
     return total
 
-# ===== SVG ถุงเลือด (ขอบสีแดง) =====
+# ===== SVG ถุงเลือด (เส้นขอบ "สีเลือดหมู") =====
 def bag_svg(blood_type: str, total: int) -> str:
     status, _label, pct = compute_bag(total, BAG_MAX)
     fill = bag_color(status)
@@ -195,14 +195,16 @@ def bag_svg(blood_type: str, total: int) -> str:
       <circle cx="84" cy="10" r="7.5" fill="#eef2ff" stroke="#dbe0ea" stroke-width="3"/>
       <rect x="77.5" y="14" width="13" height="8" rx="3" fill="#e5e7eb"/>
 
-      <!-- ตัวถุง + เส้นขอบแดง -->
+      <!-- ตัวถุง + เส้นขอบ 'สีเลือดหมู' -->
       <g>
+        <!-- เส้นเงาด้านนอก: maroon เข้มโปร่ง -->
         <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
                  L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
-              fill="#ffffff" stroke="#b91c1c" stroke-width="7" opacity=".18"/>
+              fill="#ffffff" stroke="#5a0f16" stroke-width="7" opacity=".22"/>
+        <!-- เส้นขอบหลัก: maroon -->
         <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
                  L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
-              fill="#ffffff" stroke="#ef4444" stroke-width="3"/>
+              fill="#ffffff" stroke="#800000" stroke-width="3"/>
       </g>
 
       <!-- ของเหลว -->
@@ -302,11 +304,8 @@ if st.session_state.get("flash"):
 
 # ===== ฟังก์ชันคำนวณ "วันหมดอายุนับถอยหลัง (วัน)" =====
 def days_left(exp_val):
-    """คืนค่า (Exp date - วันนี้) หน่วยวัน | เป็นลบได้ถ้าผ่านกำหนดแล้ว
-       ถ้าอยากไม่ให้ติดลบ ให้ return max(0, days) แทน"""
     if pd.isna(exp_val) or exp_val == "":
         return ""
-    # แปลงเป็น date
     if isinstance(exp_val, str):
         d = pd.to_datetime(exp_val, errors="coerce")
         if pd.isna(d):
@@ -318,7 +317,7 @@ def days_left(exp_val):
         exp_d = exp_val
     else:
         return ""
-    return (exp_d - date.today()).days  # หรือใช้ max(0, (exp_d - date.today()).days)
+    return (exp_d - date.today()).days  # เปลี่ยนเป็น max(0, ...) ถ้าไม่อยากให้ติดลบ
 
 # ============ PAGES ============
 page = st.session_state["page"]
@@ -505,12 +504,10 @@ elif page == "กรอกเลือด":
         st.markdown("### ตารางสรุป (แก้ไขได้)")
         df_vis = st.session_state["entries"].copy()
 
-        # แปลง Exp date และคำนวณวันหมดอายุนับถอยหลัง
         parsed = pd.to_datetime(df_vis["Exp date"], errors="coerce")
         df_vis["Exp date"] = parsed.dt.date
-        df_vis["วันหมดอายุนับถอยหลัง (วัน)"] = df_vis["Exp date"].apply(days_left)
+        df_vis["วันหมดอายุนับถอยหลัง (วัน)"] = df_vis["Exp date"].apply(lambda d: "" if pd.isna(pd.to_datetime(d)) else (d - date.today()).days)
 
-        # เรียงคอลัมน์ (ใส่คอลัมน์ใหม่ถัดจาก Exp date)
         cols_show = ["Exp date","วันหมดอายุนับถอยหลัง (วัน)",
                      "Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
         df_vis = df_vis.reindex(columns=cols_show)
@@ -531,11 +528,8 @@ elif page == "กรอกเลือด":
             df_vis, num_rows="dynamic", use_container_width=True, hide_index=True, column_config=col_cfg
         )
 
-        # เมื่อแก้ไขแล้ว บันทึกกลับ session_state (คำนวณ countdown ใหม่อัตโนมัติ)
         if not edited.equals(df_vis):
             out = edited.copy()
-
-            # แปลงวันที่กลับเป็นสตริงมาตรฐานเพื่อเก็บใน state
             def _d2str(x):
                 if pd.isna(x): return ""
                 if isinstance(x, (datetime, pd.Timestamp)): return x.date().strftime("%Y/%m/%d")
@@ -545,12 +539,10 @@ elif page == "กรอกเลือด":
                 except Exception:
                     return str(x)
 
-            # ไม่เก็บคอลัมน์นับถอยหลังลง state (เป็นคอลัมน์คำนวณ)
             out["Exp date"] = out["Exp date"].apply(_d2str)
             out["ค่าสถานะ"] = out["Status"].astype(str)
             out["สถานะ(สี)"] = out["Status"].map(lambda s: STATUS_COLOR.get(s, s))
 
-            # จัดคอลัมน์สำหรับเก็บ
             cols_state = ["Exp date","Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
             out = out[cols_state]
             st.session_state["entries"] = out.reset_index(drop=True)
