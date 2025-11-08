@@ -18,6 +18,7 @@ from db import init_db, get_all_status, get_stock_by_blood, adjust_stock
 st.set_page_config(page_title="Blood Stock Real-time Monitor", page_icon="🩸", layout="wide")
 st.markdown("""
 <style>
+/* spacing */
 .block-container{padding-top:1.0rem;}
 h1,h2,h3{letter-spacing:.2px}
 
@@ -60,31 +61,32 @@ h1,h2,h3{letter-spacing:.2px}
   border:2px solid #e5e7eb !important; border-radius:10px !important; font-weight:600 !important;
   caret-color:#111827 !important;
 }
-[data-testid="stSidebar"] input::placeholder{ color:#6b7280 !important; opacity:1 !important; }
-[data-testid="stSidebar"] input:focus{
-  outline:none !important; border-color:#ef4444 !important;
-  box-shadow:0 0 0 3px rgba(239,68,68,.25) !important;
-}
-[data-testid="stSidebar"] button[kind="primary"]{
-  width:100%; background:#ef4444 !important; color:#ffffff !important;
-  border:none !important; border-radius:10px !important; font-weight:800;
-}
-[data-testid="stSidebar"] button[kind="primary"]:hover{ filter:brightness(.95); }
 
 /* DataFrame */
 [data-testid="stDataFrame"] table {font-size:14px;}
 [data-testid="stDataFrame"] th {font-size:14px; font-weight:700; color:#111827;}
+
+/* ===== Sticky Alert Panel (ชัดขึ้น) ===== */
+#expiry-banner{
+  position:sticky; top:0; z-index:1000;
+  border-radius:14px; margin:6px 0 12px 0; padding:14px 16px;
+  border:2px solid #991b1b; background:linear-gradient(180deg,#fee2e2,#ffffff);
+  box-shadow:0 10px 24px rgba(153,27,27,.15);
+}
+#expiry-banner .title{font-weight:900; font-size:1.05rem; color:#7f1d1d; letter-spacing:.2px}
+#expiry-banner .chip{display:inline-flex;align-items:center;gap:.35rem; padding:.2rem .55rem; border-radius:999px; font-weight:800; background:#ef4444; color:#fff; margin-left:.5rem}
+#expiry-banner .chip.warn{background:#f59e0b}
+#expiry-banner .chip.near{background:#dc2626}
 </style>
 """, unsafe_allow_html=True)
 
 # ============ CONFIG ============
-BAG_MAX       = 20          # max ถุงต่อกรุ๊ป
+BAG_MAX       = 20
 CRITICAL_MAX  = 4
 YELLOW_MAX    = 15
 AUTH_PASSWORD = "1234"
 FLASH_SECONDS = 2.5
 
-# ===== mapping สินค้า =====
 RENAME_TO_UI    = {"Plasma": "FFP", "Platelets": "PC"}
 UI_TO_DB        = {"LPRC":"LPRC","PRC":"PRC","FFP":"Plasma","PC":"Platelets"}  # Cryo ไม่มีใน DB
 ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]
@@ -102,7 +104,7 @@ STATUS_COLOR   = {
 def _init_state():
     st.session_state.setdefault("logged_in", False)
     st.session_state.setdefault("username", "")
-    st.session_state.setdefault("page", "หน้าหลัก")
+    st.session_state.setdefault("page", "กรอกเลือด")  # เปิดที่หน้าฟอร์มบ่อยสุด
     st.session_state.setdefault("selected_bt", None)
     st.session_state.setdefault("flash", None)
 
@@ -113,7 +115,7 @@ def _init_state():
         for c in cols:
             if c not in st.session_state["entries"].columns:
                 st.session_state["entries"][c] = ""
-        st.session_state["entries"] = st.session_state["entries"][cols]
+        st.session_state["entries"] = st.session_state["entries"][cols].copy()
 
     if "activity" not in st.session_state:
         st.session_state["activity"] = []
@@ -224,6 +226,104 @@ def bag_svg(blood_type: str, total: int) -> str:
 if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
     init_db()
 
+# ===== small utils =====
+def totals_overview():
+    ov = get_all_status()
+    return {d["blood_type"]: int(d.get("total",0)) for d in ov}
+
+def products_of(bt):
+    return normalize_products(get_stock_by_blood(bt))
+
+def apply_stock_change(group, component_ui, qty, note, actor):
+    if component_ui == "Cryo":
+        raise ValueError("Cryo cannot be directly adjusted.")
+    adjust_stock(group, UI_TO_DB[component_ui], qty, actor=actor, note=note)
+
+def add_activity(action, bt, product_ui, qty, note):
+    st.session_state["activity"].insert(0, {
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "action": action, "blood_type": bt, "product": product_ui,
+        "qty": int(qty), "by": (st.session_state.get("username") or "staff"), "note": note or ""
+    })
+
+def auto_update_booking_to_release():
+    df = st.session_state["entries"]
+    if df.empty: return
+    today = date.today()
+    updated_any = False
+    for i, row in df.iterrows():
+        try:
+            if str(row.get("Status","")) == "จอง":
+                d = pd.to_datetime(row.get("created_at",""), errors="coerce")
+                if pd.isna(d): continue
+                if (today - d.date()).days >= 3:
+                    df.at[i, "Status"] = "หลุดจอง"
+                    df.at[i, "ค่าสถานะ"] = "หลุดจอง"
+                    df.at[i, "สถานะ(สี)"] = STATUS_COLOR["หลุดจอง"]
+                    updated_any = True
+        except Exception:
+            pass
+    if updated_any:
+        st.session_state["entries"] = df
+
+# ===== Expiry rules (เสถียร + ชัด) =====
+def left_days_safe(d):
+    """return int days or None"""
+    try:
+        if pd.isna(d): return None
+        if isinstance(d, str):
+            d2 = pd.to_datetime(d, errors="coerce")
+            if pd.isna(d2): return None
+            d = d2.date()
+        elif isinstance(d, (datetime, pd.Timestamp)):
+            d = d.date()
+        elif not isinstance(d, date):
+            return None
+        return (d - date.today()).days
+    except Exception:
+        return None
+
+def expiry_bucket(days):
+    """
+    return (level, label, chip_class)
+    level: "", "warn", "red", "urgent", "expired"
+    """
+    if days is None: return ("", "", "")
+    if days < 0:     return ("expired", "หมดอายุแล้ว", "near")
+    if days <= 3:    return ("urgent",  f"เร่งด่วน (เหลือ {days} วัน)", "near")
+    if days == 4:    return ("red",     "ใกล้ครบกำหนด (4 วัน)", "near")
+    if 5 <= days <= 10: return ("warn", f"เตือนล่วงหน้า (เหลือ {days} วัน)", "warn")
+    return ("", "", "")
+
+def render_expiry_banner(df):
+    """แบนเนอร์ติดบนสุด เห็นชัด + สรุปรายการ"""
+    if df.empty: return
+    warn = df[df["_bucket"].isin(["warn","red","urgent","expired"])].copy()
+    if warn.empty: return
+
+    n_warn  = int((warn["_bucket"]=="warn").sum())
+    n_red   = int((warn["_bucket"]=="red").sum())
+    n_urg   = int((warn["_bucket"]=="urgent").sum())
+    n_exp   = int((warn["_bucket"]=="expired").sum())
+
+    st.markdown(
+        f"""
+        <div id="expiry-banner">
+          <div class="title">⏰ ระบบแจ้งเตือนวันหมดอายุ
+            {'<span class="chip warn">🟠 '+str(n_warn)+'</span>' if n_warn else ''}
+            {'<span class="chip near">🔴 '+str(n_red+n_urg+n_exp)+'</span>' if (n_red+n_urg+n_exp) else ''}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    # ตารางสรุปย่อ
+    show_cols = ["Unit number","Group","Blood Components","Exp date","วันหมดอายุนับถอยหลัง (วัน)","เตือนหมดอายุ"]
+    st.dataframe(
+        warn.sort_values(["_bucket","วันหมดอายุนับถอยหลัง (วัน)"])[show_cols],
+        use_container_width=True, hide_index=True
+    )
+
 # ============ SIDEBAR ============
 with st.sidebar:
     if st.session_state.get("logged_in"):
@@ -262,8 +362,7 @@ with st.sidebar:
             if p == AUTH_PASSWORD:
                 st.session_state["logged_in"] = True
                 st.session_state["username"] = (u or "").strip() or "staff"
-                st.session_state["page"] = "หน้าหลัก"
-                flash(f"เข้าสู่ระบบสำเร็จ: {st.session_state['username']}")
+                st.session_state["page"] = "กรอกเลือด"
                 _safe_rerun()
             else:
                 st.error("รหัสผ่านไม่ถูกต้อง (password = 1234)")
@@ -271,79 +370,15 @@ with st.sidebar:
     if st.session_state["page"] == "ออกจากระบบ" and st.session_state["logged_in"]:
         st.session_state["logged_in"] = False
         st.session_state["username"] = ""
-        st.session_state["page"] = "หน้าหลัก"
-        flash("ออกจากระบบแล้ว","info")
+        st.session_state["page"] = "กรอกเลือด"
         _safe_rerun()
 
 # ============ HEADER ============
 st.title("Blood Stock Real-time Monitor")
 st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 
-# Flash
-if st.session_state.get("flash"):
-    now = time.time()
-    data = st.session_state["flash"]
-    if now < data.get("until", 0):
-        color = {"success":"#16a34a","info":"#0ea5e9","warning":"#f59e0b","error":"#ef4444"}.get(data.get("type","success"),"#16a34a")
-        st.markdown(
-            f"""
-            <div style="position:fixed; top:96px; right:24px; z-index:9999;
-                        background:{color}; color:#fff; padding:.70rem 1.0rem;
-                        border-radius:12px; font-weight:800; box-shadow:0 10px 24px rgba(0,0,0,.18)">
-                {data.get("text","")}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    else:
-        st.session_state["flash"] = None
-
-# ===== Utility for activity / stock =====
-def products_of(bt):
-    return normalize_products(get_stock_by_blood(bt))
-
-def totals_overview():
-    ov = get_all_status()
-    return {d["blood_type"]: int(d.get("total",0)) for d in ov}
-
-def apply_stock_change(group, component_ui, qty, note, actor):
-    if component_ui == "Cryo":
-        raise ValueError("Cryo cannot be directly adjusted.")
-    adjust_stock(group, UI_TO_DB[component_ui], qty, actor=actor, note=note)
-
-def add_activity(action, bt, product_ui, qty, note):
-    st.session_state["activity"].insert(0, {
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "action": action, "blood_type": bt, "product": product_ui,
-        "qty": int(qty), "by": (st.session_state.get("username") or "staff"), "note": note or ""
-    })
-
-def auto_update_booking_to_release():
-    df = st.session_state["entries"]
-    if df.empty: return
-    changed = False
-    today = date.today()
-    for i, row in df.iterrows():
-        try:
-            if str(row.get("Status","")) == "จอง":
-                d = pd.to_datetime(row.get("created_at",""), errors="coerce")
-                if pd.isna(d): continue
-                if (today - d.date()).days >= 3:
-                    df.at[i, "Status"] = "หลุดจอง"
-                    df.at[i, "ค่าสถานะ"] = "หลุดจอง"
-                    df.at[i, "สถานะ(สี)"] = STATUS_COLOR["หลุดจอง"]
-                    changed = True
-        except Exception:
-            pass
-    if changed:
-        st.session_state["entries"] = df
-        flash("อัปเดตสถานะจอง ➜ หลุดจอง อัตโนมัติ (ครบ 3 วัน)","info")
-
-# ============ PAGES ============
-page = st.session_state["page"]
-
 # ---------- หน้า: หน้าหลัก ----------
-if page == "หน้าหลัก":
+if st.session_state["page"] == "หน้าหลัก":
     auto_update_booking_to_release()
 
     c1, c2, c3 = st.columns(3)
@@ -367,7 +402,7 @@ if page == "หน้าหลัก":
     st.subheader(f"รายละเอียดกรุ๊ป {sel}")
     _L,_M,_R = st.columns([1,1,1])
     with _M:
-        st_html(bag_svg(sel, totals_overview().get(sel,0)), height=270, scrolling=False)
+        st_html(bag_svg(sel, totals.get(sel,0)), height=270, scrolling=False)
 
     dist_sel = products_of(sel)
     dist_sel["Cryo"] = get_global_cryo()
@@ -409,7 +444,7 @@ if page == "หน้าหลัก":
         st.info("ยังไม่มีรายการความเคลื่อนไหว")
 
 # ---------- หน้า: กรอกเลือด ----------
-elif page == "กรอกเลือด":
+elif st.session_state["page"] == "กรอกเลือด":
     if not st.session_state["logged_in"]:
         st.warning("ต้องล็อกอินก่อนจึงจะใช้งานเมนูนี้ได้")
     else:
@@ -448,7 +483,6 @@ elif page == "กรอกเลือด":
             st.session_state["entries"] = pd.concat(
                 [st.session_state["entries"], pd.DataFrame([new_row])], ignore_index=True
             )
-
             try:
                 if status in ["ว่าง","หลุดจอง"]:
                     apply_stock_change(group, component, +1, note or "inbound", st.session_state["username"] or "admin")
@@ -461,20 +495,18 @@ elif page == "กรอกเลือด":
                 flash("บันทึกรายการและอัปเดตคลังแล้ว ✅")
             except Exception as e:
                 st.error(f"ปรับคลังไม่สำเร็จ: {e}")
-
             _safe_rerun()
 
         # ===== นำเข้า Excel / CSV =====
         st.markdown("### นำเข้าจาก Excel/CSV (อัปโหลดแล้วลงตารางอัตโนมัติ)")
-        up = st.file_uploader("เลือกไฟล์ (.xlsx, .xls, .csv)", type=["xlsx","xls","csv"])
-        mode_merge = st.radio("โหมดนำเข้า", ["รวมกับตาราง (merge/update)", "แทนที่ทั้งหมด (replace)"], horizontal=True, index=0)
+        up = st.file_uploader("เลือกไฟล์ (.xlsx, .xls, .csv)", type=["xlsx","xls","csv"], key="uploader_file")
+        mode_merge = st.radio("โหมดนำเข้า", ["รวมกับตาราง (merge/update)", "แทนที่ทั้งหมด (replace)"], horizontal=True, index=0, key="uploader_mode")
         if up is not None:
+            df_file = None
             try:
                 df_file = pd.read_csv(up) if up.name.lower().endswith(".csv") else pd.read_excel(up)
             except Exception as e:
                 st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
-                df_file = None
-
             if df_file is not None:
                 col_map = {
                     "created_at":"created_at","Created":"created_at",
@@ -529,41 +561,22 @@ elif page == "กรอกเลือด":
                     except Exception:
                         failed += 1
                 flash(f"นำเข้าเสร็จสิ้น ✅ สำเร็จ {applied} รายการ{' (ล้มเหลว '+str(failed)+')' if failed else ''}")
+                _safe_rerun()
 
-        # ===== ตารางสรุป + เตือนหมดอายุ =====
+        # ===== ตารางสรุป + เตือนหมดอายุ (ตามเกณฑ์ใหม่) =====
         st.markdown("### ตารางสรุป (แก้ไขได้)")
-        df_vis = st.session_state["entries"].copy()
+        df_vis = st.session_state["entries"].copy(deep=True)
         parsed = pd.to_datetime(df_vis["Exp date"], errors="coerce")
         df_vis["Exp date"] = parsed.dt.date
 
-        today = date.today()
-        def left_days(d):
-            if pd.isna(pd.to_datetime(d)): return ""
-            return (d - today).days
+        # คำนวณ days & bucket
+        df_vis["วันหมดอายุนับถอยหลัง (วัน)"] = df_vis["Exp date"].apply(left_days_safe)
+        buckets = df_vis["วันหมดอายุนับถอยหลัง (วัน)"].apply(expiry_bucket)
+        df_vis["_bucket"] = buckets.apply(lambda x: x[0])
+        df_vis["เตือนหมดอายุ"] = buckets.apply(lambda x: {"": "", "warn":"🟠 "+x[1], "red":"🔴 "+x[1], "urgent":"🔴 "+x[1], "expired":"🔴 "+x[1]}[x[0]])
 
-        def expiry_flag(days):
-            if days == "": return ""
-            try: d = int(days)
-            except: return ""
-            if d < 0: return "🔴 หมดอายุแล้ว"
-            if d <= 1: return f"🔴 เหลือ {d} วัน (เร่งด่วน)"
-            if d <= 3: return f"🟠 เหลือ {d} วัน"
-            return ""
-
-        df_vis["วันหมดอายุนับถอยหลัง (วัน)"] = df_vis["Exp date"].apply(left_days)
-        df_vis["เตือนหมดอายุ"] = df_vis["วันหมดอายุนับถอยหลัง (วัน)"].apply(expiry_flag)
-
-        # แบนเนอร์เตือนรวม
-        warn_mask = df_vis["วันหมดอายุนับถอยหลัง (วัน)"].apply(lambda x: isinstance(x,int) and 0 <= x <= 3)
-        over_mask = df_vis["วันหมดอายุนับถอยหลัง (วัน)"].apply(lambda x: isinstance(x,int) and x < 0)
-        if over_mask.any():
-            show = df_vis.loc[over_mask, ["Unit number","Group","Blood Components","Exp date"]]
-            st.error(f"⚠️ มีหน่วยที่ **หมดอายุแล้ว** {len(show)} รายการ", icon="🚨")
-            st.dataframe(show, use_container_width=True, hide_index=True)
-        elif warn_mask.any():
-            show = df_vis.loc[warn_mask, ["Unit number","Group","Blood Components","Exp date","วันหมดอายุนับถอยหลัง (วัน)"]]
-            st.warning(f"⏰ ใกล้หมดอายุ (≤ 3 วัน) ทั้งหมด {len(show)} รายการ", icon="⏰")
-            st.dataframe(show, use_container_width=True, hide_index=True)
+        # แบนเนอร์สรุป (ชัดขึ้น)
+        render_expiry_banner(df_vis)
 
         cols_show = ["created_at","Exp date","วันหมดอายุนับถอยหลัง (วัน)","เตือนหมดอายุ",
                      "Unit number","Group","Blood Components","Status","ค่าสถานะ","สถานะ(สี)","บันทึก"]
@@ -573,7 +586,7 @@ elif page == "กรอกเลือด":
             "created_at": st.column_config.TextColumn("Created at (YYYY/MM/DD)"),
             "Exp date": st.column_config.DateColumn("Exp date", format="YYYY/MM/DD"),
             "วันหมดอายุนับถอยหลัง (วัน)": st.column_config.NumberColumn("วันหมดอายุนับถอยหลัง (วัน)", disabled=True),
-            "เตือนหมดอายุ": st.column_config.TextColumn("เตือนหมดอายุ", disabled=True, help="แจ้งเตือนอัตโนมัติเมื่อ ≤ 3 วัน"),
+            "เตือนหมดอายุ": st.column_config.TextColumn("เตือนหมดอายุ", disabled=True),
             "Unit number": st.column_config.TextColumn("Unit number"),
             "Group": st.column_config.SelectboxColumn("Group", options=["A","B","O","AB"]),
             "Blood Components": st.column_config.SelectboxColumn("Blood Components", options=["LPRC","PRC","FFP","PC"]),
@@ -585,11 +598,15 @@ elif page == "กรอกเลือด":
 
         edited = st.data_editor(df_vis, num_rows="dynamic", use_container_width=True, hide_index=True, column_config=col_cfg, key="entries_editor")
 
+        # เขียนกลับ state เฉพาะเมื่อผู้ใช้แก้ไขจริง
         if not edited.equals(df_vis):
             out = edited.copy()
 
             def _d2str(x):
-                if pd.isna(x): return ""
+                try:
+                    if pd.isna(x): return ""
+                except Exception:
+                    pass
                 if isinstance(x, (datetime, pd.Timestamp)): return x.date().strftime("%Y/%m/%d")
                 if isinstance(x, date): return x.strftime("%Y/%m/%d")
                 try:
