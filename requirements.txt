@@ -3,3 +3,5 @@ pandas==2.2.2
 altair==5.4.1
 python-dateutil==2.9.0.post0
 streamlit-autorefresh==1.0.1
+openpyxl>=3.1.2   # สำหรับ .xlsx
+xlrd==1.2.0       # สำหรับ .xls เก่า
