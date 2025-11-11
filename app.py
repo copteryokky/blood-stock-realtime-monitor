@@ -41,7 +41,7 @@ h1,h2,h3{letter-spacing:.2px}
 [data-testid="stDataFrame"] table {font-size:14px;}
 [data-testid="stDataFrame"] th {font-size:14px; font-weight:700; color:#111827;}
 
-/* Sticky minimal banner (ข้อความสรุปอย่างเดียว) */
+/* Sticky minimal banner */
 #expiry-banner{position:sticky;top:0;z-index:1000;border-radius:14px;margin:6px 0 12px 0;padding:12px 14px;border:2px solid #991b1b;background:linear-gradient(180deg,#fee2e2,#ffffff);box-shadow:0 10px 24px rgba(153,27,27,.12)}
 #expiry-banner .title{font-weight:900;font-size:1.02rem;color:#7f1d1d}
 #expiry-banner .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .55rem;border-radius:999px;font-weight:800;background:#ef4444;color:#fff;margin-left:.5rem}
@@ -63,10 +63,10 @@ YELLOW_MAX    = 15
 AUTH_PASSWORD = "1234"
 FLASH_SECONDS = 2.5
 
-# mapping
+# mapping / order
 RENAME_TO_UI    = {"Plasma": "FFP", "Platelets": "PC"}
 UI_TO_DB        = {"LPRC":"LPRC","PRC":"PRC","FFP":"Plasma","PC":"Platelets"}  # Cryo ไม่มีใน DB
-ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]
+ALL_PRODUCTS_UI = ["LPRC","PRC","FFP","Cryo","PC"]  # ลำดับกราฟ
 
 STATUS_OPTIONS = ["ว่าง","จอง","จำหน่าย","Exp","หลุดจอง"]
 STATUS_COLOR   = {
@@ -112,8 +112,7 @@ def show_flash():
     if time.time() > data.get("until", 0):
         st.session_state["flash"] = None
         return
-    typ = data.get("type","success")
-    st.markdown(f'<div class="flash {typ}">{data.get("text","")}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="flash {data.get("type","success")}">{data.get("text","")}</div>', unsafe_allow_html=True)
 
 def compute_bag(total: int, max_cap=BAG_MAX):
     t = max(0, int(total))
@@ -136,13 +135,14 @@ def normalize_products(rows):
     return d
 
 def get_global_cryo():
+    """Cryo = ยอดรวมทุกกรุ๊ป A,B,O,AB (นับจากทุก product แล้วยกเป็นหมวด Cryo)"""
     total = 0
     for bt in ["A","B","O","AB"]:
         rows = get_stock_by_blood(bt)
         for r in rows:
             name = str(r.get("product_type","")).strip()
             ui = RENAME_TO_UI.get(name, name)
-            if ui != "Cryo":
+            if ui != "Cryo":  # รวมยอดทั้งหมดเป็น Cryo
                 total += int(r.get("units",0))
     return total
 
@@ -251,7 +251,7 @@ def auto_update_booking_to_release():
     if updated_any:
         st.session_state["entries"] = df
 
-# ===== Expiry rules (column only) =====
+# ===== Expiry rules =====
 def left_days_safe(d):
     try:
         if pd.isna(d): return None
@@ -368,12 +368,12 @@ if st.session_state["page"] == "หน้าหลัก":
     with _M:
         st_html(bag_svg(sel, totals.get(sel,0)), height=270, scrolling=False)
 
+    # แจกแจง product + ใส่ Cryo เป็นแท่งที่ 5 (ยอดรวมทุกกรุ๊ป)
     dist_sel = products_of(sel)
     dist_sel["Cryo"] = get_global_cryo()
+
     df = pd.DataFrame([{"product_type":k, "units":int(v)} for k,v in dist_sel.items()])
-    order = pd.CategoricalDtype(ALL_PRODUCTS_UI, ordered=True)
-    df["product_type"] = df["product_type"].astype(order)
-    df = df.sort_values("product_type").reset_index(drop=True)
+    df["product_type"] = pd.Categorical(df["product_type"], categories=ALL_PRODUCTS_UI, ordered=True)
 
     def color_for(u):
         if u <= CRITICAL_MAX: return "#ef4444"
@@ -382,21 +382,31 @@ if st.session_state["page"] == "หน้าหลัก":
     df["color"] = df["units"].apply(color_for)
     ymax = max(10, int(df["units"].max() * 1.25))
 
-    bars = alt.Chart().mark_bar().encode(
-        x=alt.X("product_type:N", title="ประเภทผลิตภัณฑ์ (ลำดับ: LPRC, PRC, FFP, Cryo, PC)",
-                axis=alt.Axis(labelAngle=0,labelFontSize=13,titleFontSize=13,labelColor="#111827",titleColor="#111827")),
+    bars = alt.Chart(df).mark_bar().encode(
+        x=alt.X("product_type:N",
+                sort=ALL_PRODUCTS_UI,
+                title="ประเภทผลิตภัณฑ์ (ลำดับ: LPRC, PRC, FFP, Cryo, PC)",
+                axis=alt.Axis(labelAngle=0,labelFontSize=13,titleFontSize=13,
+                              labelColor="#111827",titleColor="#111827")),
         y=alt.Y("units:Q", title="จำนวนหน่วย (unit)",
                 scale=alt.Scale(domainMin=0, domainMax=ymax),
-                axis=alt.Axis(labelFontSize=13,titleFontSize=13,labelColor="#111827",titleColor="#111827")),
+                axis=alt.Axis(labelFontSize=13,titleFontSize=13,
+                              labelColor="#111827",titleColor="#111827")),
         color=alt.Color("color:N", scale=None, legend=None),
         tooltip=["product_type","units"]
     )
-    text = alt.Chart().mark_text(align="center", baseline="bottom", dy=-4, fontSize=13)\
-                      .encode(x="product_type:N", y="units:Q", text="units:Q")
-    chart = alt.layer(bars, text, data=df).properties(height=340).configure_view(strokeOpacity=0)
+    text = alt.Chart(df).mark_text(align="center", baseline="bottom", dy=-4, fontSize=13).encode(
+        x=alt.X("product_type:N", sort=ALL_PRODUCTS_UI),
+        y="units:Q",
+        text="units:Q"
+    )
+    chart = alt.layer(bars, text).properties(height=340).configure_view(strokeOpacity=0)
 
     st.altair_chart(chart, use_container_width=True)
-    st.dataframe(df[["product_type","units"]], use_container_width=True, hide_index=True)
+    st.dataframe(
+        df.sort_values(by="product_type", key=lambda s: s.map({v:i for i,v in enumerate(ALL_PRODUCTS_UI)}))[["product_type","units"]],
+        use_container_width=True, hide_index=True
+    )
 
     st.markdown("### รายการบันทึกความเคลื่อนไหว (Activity Log)")
     if st.session_state["activity"]:
@@ -469,7 +479,7 @@ elif st.session_state["page"] == "กรอกเลือด":
                     df_file = pd.read_csv(up)
                 else:
                     try:
-                        df_file = pd.read_excel(up)  # ใช้ engine อัตโนมัติ
+                        df_file = pd.read_excel(up)  # engine อัตโนมัติ
                     except Exception as e:
                         st.error("อ่าน Excel ไม่ได้ (อาจขาด openpyxl). แนะนำเพิ่ม openpyxl ใน requirements.txt หรืออัปโหลด CSV แทน")
                         st.info(str(e))
@@ -528,7 +538,7 @@ elif st.session_state["page"] == "กรอกเลือด":
             except Exception as e:
                 st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
 
-        # ===== ตารางสรุป (คอลัมน์สถานะวันหมดอายุเท่านั้น) =====
+        # ===== ตารางสรุป (แก้ไขได้) =====
         st.markdown("### ตารางสรุป (แก้ไขได้)")
         df_vis = st.session_state["entries"].copy(deep=True)
         parsed = pd.to_datetime(df_vis["Exp date"], errors="coerce")
@@ -538,7 +548,6 @@ elif st.session_state["page"] == "กรอกเลือด":
         df_vis["วันหมดอายุนับถอยหลัง (วัน)"] = df_vis["_exp_days"]
         df_vis["สถานะวันหมดอายุ"] = df_vis["_exp_days"].apply(expiry_label)
 
-        # แบนเนอร์สรุป (ไม่มีตารางแจ้งเตือนแยก)
         render_minimal_banner(df_vis)
 
         cols_show = ["created_at","Exp date","วันหมดอายุนับถอยหลัง (วัน)","สถานะวันหมดอายุ",
@@ -579,7 +588,6 @@ elif st.session_state["page"] == "กรอกเลือด":
                     return str(x)
 
             out["Exp date"] = out["Exp date"].apply(_d2str)
-            # เขียนกลับ state (ตัดคอลัมน์ช่วยคำนวณ)
             keep = ["created_at","Exp date","Unit number","Group","Blood Components","Status","สถานะ(สี)","บันทึก"]
             st.session_state["entries"] = out[keep].reset_index(drop=True)
             flash("อัปเดตตารางแล้ว ✅")
