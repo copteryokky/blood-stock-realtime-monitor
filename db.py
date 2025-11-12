@@ -3,18 +3,30 @@ import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 
+# ===============================
+# 🔧 CONFIG
+# ===============================
 DB_PATH = os.environ.get("BLOOD_DB_PATH", "blood.db")
 
+# ===============================
+# 📦 การเชื่อมต่อฐานข้อมูล
+# ===============================
 def get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
+# ===============================
+# 🏗️ สร้างฐานข้อมูลเริ่มต้น (init จาก schema.sql)
+# ===============================
 def init_db():
     with closing(get_conn()) as conn, open("schema.sql", "r", encoding="utf-8") as f:
         conn.executescript(f.read())
         conn.commit()
 
+# ===============================
+# 🩸 ดึงสถานะของเลือดแต่ละกรุ๊ป
+# ===============================
 def get_status_for_blood(blood_type: str):
     with closing(get_conn()) as conn:
         cur = conn.execute("""
@@ -29,6 +41,7 @@ def get_status_for_blood(blood_type: str):
         row = cur.fetchone()
         if not row:
             return {"blood_type": blood_type, "total": 0, "status": "unknown"}
+
         total = row["total"]
         if total < row["critical_min"]:
             status = "critical"
@@ -36,6 +49,7 @@ def get_status_for_blood(blood_type: str):
             status = "low"
         else:
             status = "ok"
+
         return {
             "blood_type": blood_type,
             "total": total,
@@ -44,9 +58,15 @@ def get_status_for_blood(blood_type: str):
             "low_min": row["low_min"]
         }
 
+# ===============================
+# 🩸 ดึงข้อมูลทุกกรุ๊ปเลือด
+# ===============================
 def get_all_status():
     return [get_status_for_blood(bt) for bt in ["O", "A", "B", "AB"]]
 
+# ===============================
+# 🩸 ดึงข้อมูล stock รายกรุ๊ป
+# ===============================
 def get_stock_by_blood(blood_type: str):
     with closing(get_conn()) as conn:
         cur = conn.execute("""
@@ -57,49 +77,76 @@ def get_stock_by_blood(blood_type: str):
         """, (blood_type,))
         return [dict(row) for row in cur.fetchall()]
 
+# ===============================
+# 🔄 ปรับจำนวน stock (เพิ่ม/ลด)
+# ===============================
 def adjust_stock(blood_type: str, product_type: str, qty_change: int,
                  actor: str = "system", note: str = ""):
     with closing(get_conn()) as conn:
+        # ถ้ายังไม่มีแถวนี้ ให้เพิ่มใหม่
         conn.execute("""
         INSERT INTO stock (blood_type, product_type, units)
         VALUES (?, ?, 0)
         ON CONFLICT(blood_type, product_type) DO NOTHING
         """, (blood_type, product_type))
+
+        # อัปเดตจำนวน
         conn.execute("""
-        UPDATE stock SET units = MAX(0, units + ?)
+        UPDATE stock
+           SET units = MAX(0, units + ?)
          WHERE blood_type = ? AND product_type = ?
         """, (qty_change, blood_type, product_type))
+
+        # บันทึก transaction
         conn.execute("""
         INSERT INTO transactions (ts, actor, blood_type, product_type, qty_change, note)
         VALUES (?, ?, ?, ?, ?, ?)
-        """, (datetime.now(timezone.utc).isoformat(),
-              actor, blood_type, product_type, qty_change, note))
+        """, (
+            datetime.now(timezone.utc).isoformat(),
+            actor,
+            blood_type,
+            product_type,
+            qty_change,
+            note
+        ))
+
         conn.commit()
 
+# ===============================
+# 📜 ดึงประวัติการเปลี่ยนแปลง
+# ===============================
 def get_transactions(limit: int = 50, blood_type: str | None = None):
     with closing(get_conn()) as conn:
         if blood_type:
             cur = conn.execute("""
-            SELECT * FROM transactions
+            SELECT *
+              FROM transactions
              WHERE blood_type = ?
-             ORDER BY id DESC LIMIT ?
+             ORDER BY id DESC
+             LIMIT ?
             """, (blood_type, limit))
         else:
             cur = conn.execute("""
-            SELECT * FROM transactions
-             ORDER BY id DESC LIMIT ?
+            SELECT *
+              FROM transactions
+             ORDER BY id DESC
+             LIMIT ?
             """, (limit,))
         return [dict(r) for r in cur.fetchall()]
 
 # ===============================
-# 🩸 เพิ่มฟังก์ชันรีเซ็ตสต็อกทั้งหมด
+# 🧹 รีเซ็ตสต็อกเลือดทั้งหมดเป็นศูนย์
 # ===============================
 def reset_all_stock(actor: str = "admin"):
     """รีเซ็ตจำนวนเลือดทั้งหมดให้เป็นศูนย์"""
     with closing(get_conn()) as conn:
+        # รีเซ็ตทุกแถวใน stock
         conn.execute("UPDATE stock SET units = 0")
+
+        # เพิ่ม log ลง transactions
         conn.execute("""
         INSERT INTO transactions (ts, actor, blood_type, product_type, qty_change, note)
         VALUES (?, ?, 'ALL', 'ALL', 0, 'RESET STOCK ALL TO ZERO')
         """, (datetime.now(timezone.utc).isoformat(), actor))
+
         conn.commit()
