@@ -1,6 +1,7 @@
 import sqlite3
 import pandas as pd
 import os
+from datetime import datetime
 
 DB_PATH = "blood_stock.db"
 
@@ -42,7 +43,6 @@ def init_db():
 # 📊 ดึงข้อมูลทั้งหมด
 # =====================================
 def get_all_status():
-    """คืนค่า DataFrame ของเลือดทุกกรุ๊ป"""
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM blood_stock", conn)
     conn.close()
@@ -65,7 +65,6 @@ def get_stock_by_blood(blood_type: str):
 # 🔄 ปรับจำนวนสต็อก (เพิ่ม/ลด)
 # =====================================
 def adjust_stock(blood_type: str, change: int):
-    """ปรับสต็อกเลือด เช่น +10 หรือ -5"""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT amount FROM blood_stock WHERE blood_type = ?", (blood_type,))
@@ -82,32 +81,31 @@ def adjust_stock(blood_type: str, change: int):
 
 
 # =====================================
-# 🧨 รีเซ็ตข้อมูลทั้งหมด
+# 🧨 รีเซ็ตข้อมูลทั้งหมด (พร้อมบันทึก log)
 # =====================================
-def reset_stock():
-    """รีเซ็ตปริมาณเลือดทั้งหมดให้เป็นศูนย์"""
+def reset_stock(actor: str = None):
+    """รีเซ็ตปริมาณเลือดทั้งหมดให้เป็นศูนย์ และบันทึก log ว่าใครเป็นคนรีเซ็ต"""
     conn = get_connection()
     cur = conn.cursor()
+
+    # รีเซ็ตค่า
     cur.execute("UPDATE blood_stock SET amount = 0")
     conn.commit()
+
+    # สร้างตาราง log ถ้ายังไม่มี
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS reset_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor TEXT,
+            reset_time TEXT
+        )
+    """)
+    conn.commit()
+
+    # เพิ่ม log
+    cur.execute(
+        "INSERT INTO reset_logs (actor, reset_time) VALUES (?, ?)",
+        (actor or "unknown", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    )
+    conn.commit()
     conn.close()
-
-
-# =====================================
-# 🧠 ตัวทดสอบเรียกตรง (รัน db.py เดี่ยว ๆ)
-# =====================================
-if __name__ == "__main__":
-    print("🩸 Initializing DB ...")
-    init_db()
-
-    print("📊 Current stock:")
-    print(get_all_status())
-
-    print("🔄 Adjusting stock...")
-    adjust_stock("A", 5)
-    adjust_stock("O", 3)
-    print(get_all_status())
-
-    print("🧨 Resetting stock...")
-    reset_stock()
-    print(get_all_status())
