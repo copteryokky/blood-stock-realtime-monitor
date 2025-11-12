@@ -36,13 +36,8 @@ def get_status_for_blood(blood_type: str):
             status = "low"
         else:
             status = "ok"
-        return {
-            "blood_type": blood_type,
-            "total": total,
-            "status": status,
-            "critical_min": row["critical_min"],
-            "low_min": row["low_min"]
-        }
+        return {"blood_type": blood_type, "total": total, "status": status,
+                "critical_min": row["critical_min"], "low_min": row["low_min"]}
 
 def get_all_status():
     return [get_status_for_blood(bt) for bt in ["O","A","B","AB"]]
@@ -88,10 +83,3 @@ def get_transactions(limit: int = 50, blood_type: str | None = None):
              ORDER BY id DESC LIMIT ?
             """, (limit,))
         return [dict(r) for r in cur.fetchall()]
-
-# ✅ เพิ่มฟังก์ชันรีเซ็ตข้อมูลคลังเลือดทั้งหมด
-def reset_stock():
-    with closing(get_conn()) as conn:
-        conn.execute("DELETE FROM stock")
-        conn.execute("DELETE FROM transactions")
-        conn.commit()
