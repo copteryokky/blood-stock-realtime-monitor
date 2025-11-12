@@ -592,3 +592,14 @@ elif st.session_state["page"] == "กรอกเลือด":
             st.session_state["entries"] = out[keep].reset_index(drop=True)
             flash("อัปเดตตารางแล้ว ✅")
             _safe_rerun()
+            
+            # ===== ปุ่มรีเซ็ตสต็อกทั้งหมด =====
+from db import reset_all_stock
+
+st.divider()
+st.markdown("### ⚠️ จัดการระบบ")
+if st.button("🧹 รีเซ็ตเลือดทั้งหมดเป็นศูนย์", type="primary", use_container_width=True):
+    reset_all_stock(st.session_state.get("username", "admin"))
+    flash("รีเซ็ตจำนวนเลือดทั้งหมดแล้ว ✅", "warning")
+    _safe_rerun()
+
