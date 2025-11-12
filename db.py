@@ -19,6 +19,8 @@ def init_db():
     """สร้างตาราง blood_stock หากยังไม่มี"""
     conn = get_connection()
     cur = conn.cursor()
+
+    # ตารางหลัก
     cur.execute("""
         CREATE TABLE IF NOT EXISTS blood_stock (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,9 +28,8 @@ def init_db():
             amount INTEGER DEFAULT 0
         )
     """)
-    conn.commit()
 
-    # เพิ่มกลุ่มเลือดพื้นฐาน (ถ้ายังไม่มี)
+    # ถ้าไม่มีข้อมูล ให้ใส่กรุ๊ปเลือดพื้นฐาน
     cur.execute("SELECT COUNT(*) FROM blood_stock")
     if cur.fetchone()[0] == 0:
         groups = ["A", "B", "AB", "O"]
@@ -36,6 +37,16 @@ def init_db():
             cur.execute("INSERT INTO blood_stock (blood_type, amount) VALUES (?, ?)", (g, 0))
         conn.commit()
 
+    # ตาราง log
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS reset_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor TEXT,
+            reset_time TEXT
+        )
+    """)
+
+    conn.commit()
     conn.close()
 
 
@@ -81,31 +92,28 @@ def adjust_stock(blood_type: str, change: int):
 
 
 # =====================================
-# 🧨 รีเซ็ตข้อมูลทั้งหมด (พร้อมบันทึก log)
+# 🧨 รีเซ็ตข้อมูลทั้งหมด (ป้องกันกรณีตารางยังไม่ถูกสร้าง)
 # =====================================
 def reset_stock(actor: str = None):
     """รีเซ็ตปริมาณเลือดทั้งหมดให้เป็นศูนย์ และบันทึก log ว่าใครเป็นคนรีเซ็ต"""
     conn = get_connection()
     cur = conn.cursor()
 
-    # รีเซ็ตค่า
+    # ตรวจว่ามีตาราง blood_stock หรือไม่
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='blood_stock'")
+    if not cur.fetchone():
+        print("⚙️ ไม่พบตาราง blood_stock - กำลังสร้างใหม่...")
+        init_db()  # เรียกสร้างใหม่
+
+    # รีเซ็ตปริมาณทั้งหมดเป็น 0
     cur.execute("UPDATE blood_stock SET amount = 0")
     conn.commit()
 
-    # สร้างตาราง log ถ้ายังไม่มี
+    # เพิ่ม log
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS reset_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            actor TEXT,
-            reset_time TEXT
-        )
-    """)
+        INSERT INTO reset_logs (actor, reset_time)
+        VALUES (?, ?)
+    """, (actor or "unknown", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
 
-    # เพิ่ม log
-    cur.execute(
-        "INSERT INTO reset_logs (actor, reset_time) VALUES (?, ?)",
-        (actor or "unknown", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    )
-    conn.commit()
     conn.close()
