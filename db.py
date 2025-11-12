@@ -36,11 +36,16 @@ def get_status_for_blood(blood_type: str):
             status = "low"
         else:
             status = "ok"
-        return {"blood_type": blood_type, "total": total, "status": status,
-                "critical_min": row["critical_min"], "low_min": row["low_min"]}
+        return {
+            "blood_type": blood_type,
+            "total": total,
+            "status": status,
+            "critical_min": row["critical_min"],
+            "low_min": row["low_min"]
+        }
 
 def get_all_status():
-    return [get_status_for_blood(bt) for bt in ["O","A","B","AB"]]
+    return [get_status_for_blood(bt) for bt in ["O", "A", "B", "AB"]]
 
 def get_stock_by_blood(blood_type: str):
     with closing(get_conn()) as conn:
@@ -52,7 +57,8 @@ def get_stock_by_blood(blood_type: str):
         """, (blood_type,))
         return [dict(row) for row in cur.fetchall()]
 
-def adjust_stock(blood_type: str, product_type: str, qty_change: int, actor: str = "system", note: str = ""):
+def adjust_stock(blood_type: str, product_type: str, qty_change: int,
+                 actor: str = "system", note: str = ""):
     with closing(get_conn()) as conn:
         conn.execute("""
         INSERT INTO stock (blood_type, product_type, units)
@@ -66,7 +72,8 @@ def adjust_stock(blood_type: str, product_type: str, qty_change: int, actor: str
         conn.execute("""
         INSERT INTO transactions (ts, actor, blood_type, product_type, qty_change, note)
         VALUES (?, ?, ?, ?, ?, ?)
-        """, (datetime.now(timezone.utc).isoformat(), actor, blood_type, product_type, qty_change, note))
+        """, (datetime.now(timezone.utc).isoformat(),
+              actor, blood_type, product_type, qty_change, note))
         conn.commit()
 
 def get_transactions(limit: int = 50, blood_type: str | None = None):
@@ -83,3 +90,16 @@ def get_transactions(limit: int = 50, blood_type: str | None = None):
              ORDER BY id DESC LIMIT ?
             """, (limit,))
         return [dict(r) for r in cur.fetchall()]
+
+# ===============================
+# 🩸 เพิ่มฟังก์ชันรีเซ็ตสต็อกทั้งหมด
+# ===============================
+def reset_all_stock(actor: str = "admin"):
+    """รีเซ็ตจำนวนเลือดทั้งหมดให้เป็นศูนย์"""
+    with closing(get_conn()) as conn:
+        conn.execute("UPDATE stock SET units = 0")
+        conn.execute("""
+        INSERT INTO transactions (ts, actor, blood_type, product_type, qty_change, note)
+        VALUES (?, ?, 'ALL', 'ALL', 0, 'RESET STOCK ALL TO ZERO')
+        """, (datetime.now(timezone.utc).isoformat(), actor))
+        conn.commit()
