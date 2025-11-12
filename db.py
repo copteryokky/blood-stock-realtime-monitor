@@ -1,119 +1,97 @@
-import sqlite3
-import pandas as pd
 import os
-from datetime import datetime
+import sqlite3
+from contextlib import closing
+from datetime import datetime, timezone
 
-DB_PATH = "blood_stock.db"
+DB_PATH = os.environ.get("BLOOD_DB_PATH", "blood.db")
 
-# =====================================
-# 🧩 ฟังก์ชันเชื่อมต่อฐานข้อมูล
-# =====================================
-def get_connection():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+def get_conn():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-
-# =====================================
-# 🧱 ฟังก์ชันเริ่มต้นฐานข้อมูล
-# =====================================
 def init_db():
-    """สร้างตาราง blood_stock หากยังไม่มี"""
-    conn = get_connection()
-    cur = conn.cursor()
-
-    # ตารางหลัก
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS blood_stock (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            blood_type TEXT,
-            amount INTEGER DEFAULT 0
-        )
-    """)
-
-    # ถ้าไม่มีข้อมูล ให้ใส่กรุ๊ปเลือดพื้นฐาน
-    cur.execute("SELECT COUNT(*) FROM blood_stock")
-    if cur.fetchone()[0] == 0:
-        groups = ["A", "B", "AB", "O"]
-        for g in groups:
-            cur.execute("INSERT INTO blood_stock (blood_type, amount) VALUES (?, ?)", (g, 0))
+    with closing(get_conn()) as conn, open("schema.sql", "r", encoding="utf-8") as f:
+        conn.executescript(f.read())
         conn.commit()
 
-    # ตาราง log
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS reset_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            actor TEXT,
-            reset_time TEXT
-        )
-    """)
+def get_status_for_blood(blood_type: str):
+    with closing(get_conn()) as conn:
+        cur = conn.execute("""
+            SELECT t.blood_type,
+                   COALESCE(SUM(s.units),0) AS total,
+                   t.critical_min, t.low_min
+              FROM thresholds t
+              LEFT JOIN stock s ON s.blood_type = t.blood_type
+             WHERE t.blood_type = ?
+          GROUP BY t.blood_type
+        """, (blood_type,))
+        row = cur.fetchone()
+        if not row:
+            return {"blood_type": blood_type, "total": 0, "status": "unknown"}
+        total = row["total"]
+        if total < row["critical_min"]:
+            status = "critical"
+        elif total < row["low_min"]:
+            status = "low"
+        else:
+            status = "ok"
+        return {
+            "blood_type": blood_type,
+            "total": total,
+            "status": status,
+            "critical_min": row["critical_min"],
+            "low_min": row["low_min"]
+        }
 
-    conn.commit()
-    conn.close()
-
-
-# =====================================
-# 📊 ดึงข้อมูลทั้งหมด
-# =====================================
 def get_all_status():
-    conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM blood_stock", conn)
-    conn.close()
-    return df
+    return [get_status_for_blood(bt) for bt in ["O","A","B","AB"]]
 
-
-# =====================================
-# 🔍 ดึงสต็อกเลือดตามกรุ๊ป
-# =====================================
 def get_stock_by_blood(blood_type: str):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT amount FROM blood_stock WHERE blood_type = ?", (blood_type,))
-    row = cur.fetchone()
-    conn.close()
-    return row[0] if row else 0
+    with closing(get_conn()) as conn:
+        cur = conn.execute("""
+            SELECT product_type, units
+              FROM stock
+             WHERE blood_type = ?
+             ORDER BY product_type
+        """, (blood_type,))
+        return [dict(row) for row in cur.fetchall()]
 
+def adjust_stock(blood_type: str, product_type: str, qty_change: int, actor: str = "system", note: str = ""):
+    with closing(get_conn()) as conn:
+        conn.execute("""
+        INSERT INTO stock (blood_type, product_type, units)
+        VALUES (?, ?, 0)
+        ON CONFLICT(blood_type, product_type) DO NOTHING
+        """, (blood_type, product_type))
+        conn.execute("""
+        UPDATE stock SET units = MAX(0, units + ?)
+         WHERE blood_type = ? AND product_type = ?
+        """, (qty_change, blood_type, product_type))
+        conn.execute("""
+        INSERT INTO transactions (ts, actor, blood_type, product_type, qty_change, note)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, (datetime.now(timezone.utc).isoformat(), actor, blood_type, product_type, qty_change, note))
+        conn.commit()
 
-# =====================================
-# 🔄 ปรับจำนวนสต็อก (เพิ่ม/ลด)
-# =====================================
-def adjust_stock(blood_type: str, change: int):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT amount FROM blood_stock WHERE blood_type = ?", (blood_type,))
-    row = cur.fetchone()
+def get_transactions(limit: int = 50, blood_type: str | None = None):
+    with closing(get_conn()) as conn:
+        if blood_type:
+            cur = conn.execute("""
+            SELECT * FROM transactions
+             WHERE blood_type = ?
+             ORDER BY id DESC LIMIT ?
+            """, (blood_type, limit))
+        else:
+            cur = conn.execute("""
+            SELECT * FROM transactions
+             ORDER BY id DESC LIMIT ?
+            """, (limit,))
+        return [dict(r) for r in cur.fetchall()]
 
-    if not row:
-        cur.execute("INSERT INTO blood_stock (blood_type, amount) VALUES (?, ?)", (blood_type, max(change, 0)))
-    else:
-        new_amt = max(row[0] + change, 0)
-        cur.execute("UPDATE blood_stock SET amount = ? WHERE blood_type = ?", (new_amt, blood_type))
-
-    conn.commit()
-    conn.close()
-
-
-# =====================================
-# 🧨 รีเซ็ตข้อมูลทั้งหมด (ป้องกันกรณีตารางยังไม่ถูกสร้าง)
-# =====================================
-def reset_stock(actor: str = None):
-    """รีเซ็ตปริมาณเลือดทั้งหมดให้เป็นศูนย์ และบันทึก log ว่าใครเป็นคนรีเซ็ต"""
-    conn = get_connection()
-    cur = conn.cursor()
-
-    # ตรวจว่ามีตาราง blood_stock หรือไม่
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='blood_stock'")
-    if not cur.fetchone():
-        print("⚙️ ไม่พบตาราง blood_stock - กำลังสร้างใหม่...")
-        init_db()  # เรียกสร้างใหม่
-
-    # รีเซ็ตปริมาณทั้งหมดเป็น 0
-    cur.execute("UPDATE blood_stock SET amount = 0")
-    conn.commit()
-
-    # เพิ่ม log
-    cur.execute("""
-        INSERT INTO reset_logs (actor, reset_time)
-        VALUES (?, ?)
-    """, (actor or "unknown", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    conn.commit()
-
-    conn.close()
+# ✅ เพิ่มฟังก์ชันรีเซ็ตข้อมูลคลังเลือดทั้งหมด
+def reset_stock():
+    with closing(get_conn()) as conn:
+        conn.execute("DELETE FROM stock")
+        conn.execute("DELETE FROM transactions")
+        conn.commit()
