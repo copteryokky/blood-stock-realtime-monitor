@@ -118,6 +118,7 @@ h1,h2,h3{letter-spacing:.2px}
 )
 
 # ============ CONFIG ============
+# BAG_MAX ใช้สำหรับ label เฉย ๆ แต่ระดับน้ำจริงจะใช้ max ของแต่ละหน้าจอ
 BAG_MAX = 20
 CRITICAL_MAX = 4
 YELLOW_MAX = 15
@@ -198,15 +199,27 @@ def show_flash():
     )
 
 
-def compute_bag(total: int, max_cap=BAG_MAX):
+def compute_bag(total: int, max_cap: int):
+    """
+    total      = จำนวน unit จริงของกรุ๊ปนั้น ๆ
+    max_cap    = ค่ามากสุดในทุกกรุ๊ป (ใช้ทำสัดส่วนความสูงของน้ำ)
+    status red/yellow/green ยังคำนวณจาก CRITICAL_MAX / YELLOW_MAX ตามเดิม
+    """
     t = max(0, int(total))
+
+    # สีสถานะตามเกณฑ์เดิม
     if t <= CRITICAL_MAX:
         status, label = "red", "วิกฤตใกล้หมด"
     elif t <= YELLOW_MAX:
         status, label = "yellow", "เพียงพอ"
     else:
         status, label = "green", "ปกติ"
-    pct = max(0, min(100, int(round(100 * min(t, max_cap) / max_cap))))
+
+    if max_cap <= 0:
+        pct = 0
+    else:
+        pct = max(0, min(100, int(round(100 * t / max_cap))))
+
     return status, label, pct
 
 
@@ -237,12 +250,17 @@ def get_global_cryo():
 
 
 # ===== SVG: ถุงเลือด + คลื่นน้ำสองชั้นแบบสมจริง =====
-def bag_svg(blood_type: str, total: int) -> str:
+def bag_svg(blood_type: str, total: int, max_total: int) -> str:
     """
     ถุงเลือดพร้อมน้ำแบบมี 2 คลื่น (หน้า/หลัง) ความเร็วต่างกัน
-    และน้ำทั้งถุงโยกขึ้นลงเบา ๆ ให้ดูมีชีวิตมากขึ้น
+    และน้ำทั้งถุงโยกขึ้นลงเบา ๆ
+    ระดับน้ำขึ้น/ลงตามจำนวน total เทียบกับ max_total
+    ถ้า total == 0 จะไม่แสดงน้ำเลย (ถุงใส)
     """
-    status, _label, pct = compute_bag(total, BAG_MAX)
+    if max_total <= 0:
+        max_total = 1
+
+    status, _label, pct = compute_bag(total, max_total)
     fill = bag_color(status)
     letter_fill = {
         "A": "#facc15",
@@ -258,15 +276,42 @@ def bag_svg(blood_type: str, total: int) -> str:
     water_y = inner_y0 + (inner_h - water_h)
 
     gid = f"g_{blood_type}"
-    wave1 = f"wave1_{blood_type}"
-    wave2 = f"wave2_{blood_type}"
-    bob = f"bob_{blood_type}"
 
     # ความสูงคลื่นหน้า/หลัง + ความเร็ว
     wave_amp1 = 5 + 6 * (pct / 100.0)
     wave_amp2 = 3 + 4 * (pct / 100.0)
     wave_speed1 = 4.5
     wave_speed2 = 7.0
+
+    wave1 = f"wave1_{blood_type}"
+    wave2 = f"wave2_{blood_type}"
+    bob = f"bob_{blood_type}"
+
+    if pct <= 0:
+        # ไม่มีเลือดเลย ไม่ต้องวาดน้ำ/คลื่น
+        water_group_html = ""
+    else:
+        water_group_html = f"""
+      <g clip-path="url(#clip-{gid})">
+        <g class="water-{gid}" transform="translate(24,{water_y:.1f})">
+          <!-- layer หลัง -->
+          <g class="wave-back-{gid}">
+            <use href="#wave-path-back-{gid}" x="0"/>
+            <use href="#wave-path-back-{gid}" x="80"/>
+            <use href="#wave-path-back-{gid}" x="160"/>
+          </g>
+          <!-- layer หน้า -->
+          <g class="wave-front-{gid}">
+            <use href="#wave-path-front-{gid}" x="0"/>
+            <use href="#wave-path-front-{gid}" x="80"/>
+            <use href="#wave-path-front-{gid}" x="160"/>
+          </g>
+          <!-- น้ำทึบด้านล่าง -->
+          <rect y="24" width="220" height="220"
+                fill="url(#liquid-{gid})"/>
+        </g>
+      </g>
+    """
 
     return f"""
 <div>
@@ -353,32 +398,13 @@ def bag_svg(blood_type: str, total: int) -> str:
                L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
             fill="#ffffff" stroke="#800000" stroke-width="3"/>
 
-      <!-- น้ำ + คลื่น (โยกขึ้นลงเบา ๆ) -->
-      <g clip-path="url(#clip-{gid})">
-        <g class="water-{gid}" transform="translate(24,{water_y:.1f})">
-          <!-- layer หลัง -->
-          <g class="wave-back-{gid}">
-            <use href="#wave-path-back-{gid}" x="0"/>
-            <use href="#wave-path-back-{gid}" x="80"/>
-            <use href="#wave-path-back-{gid}" x="160"/>
-          </g>
-          <!-- layer หน้า -->
-          <g class="wave-front-{gid}">
-            <use href="#wave-path-front-{gid}" x="0"/>
-            <use href="#wave-path-front-{gid}" x="80"/>
-            <use href="#wave-path-front-{gid}" x="160"/>
-          </g>
-          <!-- น้ำทึบด้านล่าง -->
-          <rect y="24" width="220" height="220"
-                fill="url(#liquid-{gid})"/>
-        </g>
-      </g>
+      {water_group_html}
 
-      <!-- ป้าย max -->
+      <!-- ป้าย max (โชว์ max_total ณ ตอนนี้) -->
       <rect x="98" y="24" rx="10" ry="10" width="54" height="22"
             fill="#ffffff" stroke="#e5e7eb"/>
       <text x="125" y="40" text-anchor="middle"
-            font-size="12" fill="#374151">{BAG_MAX} max</text>
+            font-size="12" fill="#374151">{max_total} max</text>
 
       <!-- ตัวอักษรกรุ๊ป -->
       <text x="84" y="126" text-anchor="middle"
@@ -907,12 +933,18 @@ elif st.session_state["page"] == "หน้าหลัก":
     )
 
     totals = totals_overview()
+    max_total_ui = max(totals.values(), default=0)  # ใช้ทำระดับน้ำ
+
     blood_types = ["A", "B", "O", "AB"]
     cols = st.columns(4)
     for i, bt in enumerate(blood_types):
         with cols[i]:
             st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
-            st_html(bag_svg(bt, totals.get(bt, 0)), height=270, scrolling=False)
+            st_html(
+                bag_svg(bt, totals.get(bt, 0), max_total_ui),
+                height=270,
+                scrolling=False,
+            )
             if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
                 st.session_state["selected_bt"] = bt
                 _safe_rerun()
@@ -922,7 +954,11 @@ elif st.session_state["page"] == "หน้าหลัก":
     st.subheader(f"รายละเอียดกรุ๊ป {sel}")
     _L, _M, _R = st.columns([1, 1, 1])
     with _M:
-        st_html(bag_svg(sel, totals.get(sel, 0)), height=270, scrolling=False)
+        st_html(
+            bag_svg(sel, totals.get(sel, 0), max_total_ui),
+            height=270,
+            scrolling=False,
+        )
 
     dist_sel = products_of(sel)
     dist_sel["Cryo"] = get_global_cryo()
