@@ -10,7 +10,7 @@ from streamlit.components.v1 import html as st_html
 try:
     from streamlit_autorefresh import st_autorefresh
 except Exception:
-    def st_autorefresh(*args, **kwargs): 
+    def st_autorefresh(*args, **kwargs):
         return None
 
 # ===== DB funcs =====
@@ -20,7 +20,7 @@ from db import init_db, get_all_status, get_stock_by_blood, adjust_stock
 st.set_page_config(
     page_title="Blood Stock Real-time Monitor",
     page_icon="🩸",
-    layout="wide"
+    layout="wide",
 )
 
 st.markdown(
@@ -193,8 +193,7 @@ def show_flash():
         st.session_state["flash"] = None
         return
     st.markdown(
-        f'<div class="flash {data.get("type","success")}">'
-        f'{data.get("text","")}</div>',
+        f'<div class="flash {data.get("type","success")}">{data.get("text","")}</div>',
         unsafe_allow_html=True,
     )
 
@@ -237,10 +236,11 @@ def get_global_cryo():
     return total
 
 
-# ===== SVG: ถุงเลือดพร้อม “คลื่นน้ำ” แบบใหม่ =====
+# ===== SVG: ถุงเลือด + คลื่นน้ำสองชั้นแบบสมจริง =====
 def bag_svg(blood_type: str, total: int) -> str:
     """
-    วาดถุงเลือด + คลื่นน้ำแบบขยับได้ (ใช้ keyframes แยกแต่ละกรุ๊ปกัน)
+    ถุงเลือดพร้อมน้ำแบบมี 2 คลื่น (หน้า/หลัง) ความเร็วต่างกัน
+    และน้ำทั้งถุงโยกขึ้นลงเบา ๆ ให้ดูมีชีวิตมากขึ้น
     """
     status, _label, pct = compute_bag(total, BAG_MAX)
     fill = bag_color(status)
@@ -251,42 +251,68 @@ def bag_svg(blood_type: str, total: int) -> str:
         "AB": "#ffffff",
     }.get(blood_type, "#ffffff")
 
-    # ความสูงน้ำ
+    # ระดับน้ำภายในถุง
     inner_h = 148.0
     inner_y0 = 40.0
     water_h = inner_h * pct / 100.0
     water_y = inner_y0 + (inner_h - water_h)
 
-    # id / keyframe แยกตามกรุ๊ป กันชนกันเวลาเรียกหลายถุง
     gid = f"g_{blood_type}"
-    wave_anim = f"wave_anim_{blood_type}"
+    wave1 = f"wave1_{blood_type}"
+    wave2 = f"wave2_{blood_type}"
+    bob = f"bob_{blood_type}"
 
-    # ความสูงคลื่นมากขึ้นตามระดับน้ำหน่อย ๆ
-    wave_amp = 4 + 5 * (pct / 100.0)
-    wave_speed = 5.0  # วินาที ต่อรอบ
+    # ความสูงคลื่นหน้า/หลัง + ความเร็ว
+    wave_amp1 = 5 + 6 * (pct / 100.0)
+    wave_amp2 = 3 + 4 * (pct / 100.0)
+    wave_speed1 = 4.5
+    wave_speed2 = 7.0
 
     return f"""
 <div>
   <style>
-    .bag-wrap {{
+    .bag-wrap{{
       display:flex;flex-direction:column;align-items:center;
       gap:10px;font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial;
     }}
-    .bag {{
+    .bag{{
       transition:transform .18s ease, filter .18s ease;
     }}
-    .bag:hover {{
+    .bag:hover{{
       transform:translateY(-4px);
       filter:drop-shadow(0 14px 30px rgba(0,0,0,.16));
     }}
-    @keyframes {wave_anim} {{
-      0%  {{ transform:translateX(0);   }}
-      50% {{ transform:translateX(-60px); }}
-      100%{{ transform:translateX(-120px); }}
+    .water-{gid}{{
+      animation:{bob} 6s ease-in-out infinite;
+      transform-box:fill-box;
+      transform-origin:center;
+    }}
+    .wave-front-{gid}{{
+      animation:{wave1} {wave_speed1}s linear infinite;
+      opacity:.95;
+    }}
+    .wave-back-{gid}{{
+      animation:{wave2} {wave_speed2}s linear infinite;
+      opacity:.7;
+    }}
+    @keyframes {wave1}{{
+      0%  {{ transform:translateX(0px); }}
+      50% {{ transform:translateX(-70px); }}
+      100%{{ transform:translateX(-140px); }}
+    }}
+    @keyframes {wave2}{{
+      0%  {{ transform:translateX(0px); }}
+      50% {{ transform:translateX(-90px); }}
+      100%{{ transform:translateX(-180px); }}
+    }}
+    @keyframes {bob}{{
+      0%,100% {{ transform:translateY(0px); }}
+      50%     {{ transform:translateY(-6px); }}
     }}
   </style>
   <div class="bag-wrap">
-    <svg class="bag" width="170" height="230" viewBox="0 0 168 206"
+    <svg class="bag" width="170" height="230"
+         viewBox="0 0 168 206"
          xmlns="http://www.w3.org/2000/svg">
       <defs>
         <clipPath id="clip-{gid}">
@@ -294,18 +320,26 @@ def bag_svg(blood_type: str, total: int) -> str:
                    L144,172 C144,191 128,202 108,204 L56,204 C36,202 24,191 24,172 Z"/>
         </clipPath>
 
+        <!-- gradient น้ำ -->
         <linearGradient id="liquid-{gid}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"  stop-color="{fill}" stop-opacity=".98"/>
-          <stop offset="60%" stop-color="{fill}" stop-opacity=".93"/>
+          <stop offset="0%"   stop-color="{fill}" stop-opacity=".98"/>
+          <stop offset="55%"  stop-color="{fill}" stop-opacity=".93"/>
           <stop offset="100%" stop-color="{fill}" stop-opacity=".88"/>
         </linearGradient>
 
-        <!-- เส้นคลื่นพื้นฐาน -->
-        <path id="wave-path-{gid}"
+        <!-- คลื่นหน้า -->
+        <path id="wave-path-front-{gid}"
               d="M0 18
-                 Q20 {18 - wave_amp:.1f} 40 18
+                 Q20 {18 - wave_amp1:.1f} 40 18
                  T80 18 T120 18 T160 18
                  V40 H0 Z"
+              fill="url(#liquid-{gid})" />
+        <!-- คลื่นหลัง (เตี้ยกว่า) -->
+        <path id="wave-path-back-{gid}"
+              d="M0 22
+                 Q20 {22 - wave_amp2:.1f} 40 22
+                 T80 22 T120 22 T160 22
+                 V44 H0 Z"
               fill="url(#liquid-{gid})" />
       </defs>
 
@@ -319,20 +353,23 @@ def bag_svg(blood_type: str, total: int) -> str:
                L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
             fill="#ffffff" stroke="#800000" stroke-width="3"/>
 
-      <!-- น้ำ + คลื่น -->
+      <!-- น้ำ + คลื่น (โยกขึ้นลงเบา ๆ) -->
       <g clip-path="url(#clip-{gid})">
-        <g transform="translate(24,{water_y:.1f})">
-          <g style="
-                animation:{wave_anim} {wave_speed}s linear infinite;
-                transform-box:fill-box;
-                transform-origin:center;
-             ">
-            <use href="#wave-path-{gid}" x="0"/>
-            <use href="#wave-path-{gid}" x="80"/>
-            <use href="#wave-path-{gid}" x="160"/>
+        <g class="water-{gid}" transform="translate(24,{water_y:.1f})">
+          <!-- layer หลัง -->
+          <g class="wave-back-{gid}">
+            <use href="#wave-path-back-{gid}" x="0"/>
+            <use href="#wave-path-back-{gid}" x="80"/>
+            <use href="#wave-path-back-{gid}" x="160"/>
           </g>
-          <!-- เติมน้ำส่วนทึบด้านล่าง -->
-          <rect y="20" width="200" height="220"
+          <!-- layer หน้า -->
+          <g class="wave-front-{gid}">
+            <use href="#wave-path-front-{gid}" x="0"/>
+            <use href="#wave-path-front-{gid}" x="80"/>
+            <use href="#wave-path-front-{gid}" x="160"/>
+          </g>
+          <!-- น้ำทึบด้านล่าง -->
+          <rect y="24" width="220" height="220"
                 fill="url(#liquid-{gid})"/>
         </g>
       </g>
@@ -364,7 +401,7 @@ def totals_overview():
     return {d["blood_type"]: int(d.get("total", 0)) for d in ov}
 
 
-def products_of(bt):
+def products_of(bt: str):
     return normalize_products(get_stock_by_blood(bt))
 
 
@@ -643,7 +680,6 @@ if st.session_state["page"] == "กรอกเลือด":
                         columns={c: col_map.get(str(c).strip(), c) for c in df_file.columns}
                     )
 
-                    # map สถานะภาษาอังกฤษ -> ไทย
                     status_map_en2th = {
                         "Available": "ว่าง",
                         "ReadyToIssue": "จอง",
@@ -656,7 +692,6 @@ if st.session_state["page"] == "กรอกเลือด":
                         lambda s: status_map_en2th.get(str(s).strip(), str(s).strip())
                     )
 
-                    # เติมคอลัมน์ / จัดลำดับ
                     for c in [
                         "created_at",
                         "Exp date",
@@ -680,12 +715,10 @@ if st.session_state["page"] == "กรอกเลือด":
                         ]
                     ].copy()
 
-                    # สีสถานะ
                     df_file["สถานะ(สี)"] = df_file["Status"].map(
                         lambda s: STATUS_COLOR.get(str(s), str(s))
                     )
 
-                    # โหมดแทนที่
                     if mode_merge.startswith("แทนที่"):
                         st.session_state["entries"] = pd.DataFrame(
                             columns=[
@@ -707,7 +740,6 @@ if st.session_state["page"] == "กรอกเลือด":
                         stt = str(r["Status"]).strip() or "ว่าง"
                         nt = str(r["บันทึก"]).strip()
 
-                        # เติมลงตารางมุมมอง
                         st.session_state["entries"] = pd.concat(
                             [
                                 st.session_state["entries"],
@@ -732,7 +764,6 @@ if st.session_state["page"] == "กรอกเลือด":
                             ignore_index=True,
                         )
 
-                        # กระทบคลังตามสถานะ
                         try:
                             if stt in ["ว่าง", "หลุดจอง"]:
                                 apply_stock_change(
@@ -766,7 +797,6 @@ if st.session_state["page"] == "กรอกเลือด":
             except Exception as e:
                 st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
 
-        # ===== ตารางสรุป (แก้ไขได้) =====
         st.markdown("### ตารางสรุป (แก้ไขได้)")
         df_vis = st.session_state["entries"].copy(deep=True)
 
@@ -946,7 +976,6 @@ elif st.session_state["page"] == "หน้าหลัก":
     )
     st.altair_chart(chart, use_container_width=True)
 
-    # ตารางไม่โชว์คอลัมน์ color แล้ว
     df_table = df[["product_type", "units"]].sort_values(by="product_type")
     st.dataframe(df_table, use_container_width=True, hide_index=True)
 
