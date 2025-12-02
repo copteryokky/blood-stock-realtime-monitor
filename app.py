@@ -10,7 +10,7 @@ from streamlit.components.v1 import html as st_html
 try:
     from streamlit_autorefresh import st_autorefresh
 except Exception:
-    def st_autorefresh(*args, **kwargs): 
+    def st_autorefresh(*args, **kwargs):
         return None
 
 # ===== DB funcs =====
@@ -171,16 +171,16 @@ h1,h2,h3{
 /* ---------- Landing page ---------- */
 .landing-bg{
     border-radius:28px;
-    padding:32px 32px 40px 32px;
-    margin:4px 0 26px 0;
+    padding:26px 30px 30px 30px;
+    margin:6px 0 24px 0;
     background:radial-gradient(circle at 0 0,#fee2e2 0,#fff 35%),
                radial-gradient(circle at 100% 100%,#dbeafe 0,#ffffff 55%);
     box-shadow:0 24px 60px rgba(15,23,42,.18);
 }
 .landing-grid{
     display:grid;
-    grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);
-    gap:38px;
+    grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);
+    gap:32px;
     align-items:center;
 }
 .landing-badge{
@@ -195,26 +195,45 @@ h1,h2,h3{
     font-weight:700;
 }
 .landing-title{
-    font-size:1.8rem;
-    line-height:1.3;
+    font-size:1.9rem;
+    line-height:1.25;
     font-weight:900;
     color:#111827;
-    margin-top:10px;
+    margin-top:12px;
 }
 .landing-subtitle{
     font-size:1rem;
     color:#4b5563;
-    margin-top:.4rem;
+    margin-top:8px;
 }
-.landing-list{
-    margin-top:12px;
+.landing-bullets{
+    margin-top:14px;
     color:#111827;
+    font-size:.96rem;
 }
-.landing-list li{
-    margin-bottom:.35rem;
+.landing-bullets li{
+    margin-bottom:.25rem;
 }
+
+/* mini stat chips */
+.landing-stat-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:14px;
+}
+.landing-stat-chip{
+    padding:.35rem .7rem;
+    border-radius:999px;
+    background:#111827;
+    color:#f9fafb;
+    font-size:.78rem;
+    font-weight:700;
+}
+
+/* CTA */
 .landing-cta{
-    margin-top:20px;
+    margin-top:22px;
 }
 .landing-cta button{
     border-radius:999px!important;
@@ -234,7 +253,7 @@ h1,h2,h3{
       grid-template-columns:minmax(0,1fr);
   }
   .landing-bg{
-      padding:22px 18px 26px 18px;
+      padding:22px 18px 24px 18px;
   }
   .landing-features{
       grid-template-columns:minmax(0,1fr);
@@ -332,8 +351,7 @@ STATUS_COLOR = {
 def _init_state():
     st.session_state.setdefault("logged_in", False)
     st.session_state.setdefault("username", "")
-    # ให้เปิดมาที่ "หน้าหลัก" ซึ่งจะเป็น landing ถ้ายังไม่ล็อกอิน
-    st.session_state.setdefault("page", "หน้าหลัก")
+    st.session_state.setdefault("page", "หน้าหลัก")   # เปิดมาที่ landing
     st.session_state.setdefault("selected_bt", None)
     st.session_state.setdefault("flash", None)
 
@@ -437,7 +455,6 @@ def bag_svg(blood_type: str, total: int) -> str:
     water_y = inner_y0 + (inner_h - water_h)
     gid = f"g_{blood_type}"
 
-    # รูปร่างคลื่นหลัก/รอง
     base_y = 20.0
     amp1 = 5 + 6 * (pct / 100.0)
     amp2 = amp1 * 0.6
@@ -505,20 +522,17 @@ def bag_svg(blood_type: str, total: int) -> str:
 
       <!-- ของเหลว + คลื่น -->
       <g clip-path="url(#clip-{gid})">
-        <!-- ชั้นคลื่นหลัก -->
         <g transform="translate(24,{water_y:.1f})">
           <g class="wave-layer" style="animation:wave-move-1 {wave_speed1}s linear infinite;">
             <use href="#wave1-{gid}" fill="url(#liquid-{gid})" x="0"/>
             <use href="#wave1-{gid}" fill="url(#liquid-{gid})" x="80"/>
             <use href="#wave1-{gid}" fill="url(#liquid-{gid})" x="160"/>
           </g>
-          <!-- ชั้นคลื่นรอง (เลเยอร์ 2) -->
           <g class="wave-layer" style="animation:wave-move-2 {wave_speed2}s linear infinite;">
             <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="0"/>
             <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="80"/>
             <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="160"/>
           </g>
-          <!-- เติมของเหลวด้านล่าง -->
           <rect y="{base_y+4:.1f}" width="220" height="220" fill="url(#liquid-{gid})"/>
         </g>
       </g>
@@ -679,7 +693,6 @@ with st.sidebar:
         st.session_state["page"] = "เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ"
         _safe_rerun()
 
-    # จัดการ logout (ยังใช้ logic เดิม)
     if st.session_state["page"] == "ออกจากระบบ" and st.session_state["logged_in"]:
         st.session_state["logged_in"] = False
         st.session_state["username"] = ""
@@ -694,9 +707,9 @@ st.title("Blood Stock Real-time Monitor")
 st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 show_flash()
 
-# ---------- UI FUNCTIONS (Landing & Login & Dashboard) ----------
+# ---------- UI FUNCTIONS ----------
 def render_landing_page():
-    """หน้า Landing ก่อนล็อกอิน"""
+    """หน้า Landing ก่อนล็อกอิน – เวอร์ชันข้อความสั้นลง"""
     st.markdown(
         """
         <div class="landing-bg">
@@ -706,19 +719,23 @@ def render_landing_page():
                 Blood Stock Real-time Monitor · สำหรับธนาคารเลือด / ห้อง Lab
               </div>
               <div class="landing-title">
-                แดชบอร์ดคลังเลือดแบบ Real-time<br/>
-                ช่วยดูปริมาณสำรองและวันหมดอายุได้ทันที
+                ดูคลังเลือดแบบ Real-time<br/>
+                รู้ปริมาณสำรองและวันหมดอายุในหน้าเดียว
               </div>
               <div class="landing-subtitle">
-                ระบบออกแบบมาสำหรับธนาคารเลือด ห้อง Lab และงานระบบคุณภาพของโรงพยาบาล
-                ให้ติดตามสถานะถุงเลือดและผลิตภัณฑ์ได้ชัดเจน พร้อมข้อมูลวันหมดอายุแบบอัปเดตอัตโนมัติ
+                หน้าจอเดียวสำหรับทีมธนาคารเลือดและห้อง Lab
+                เห็นคงเหลือของแต่ละกรุ๊ปและชนิดผลิตภัณฑ์ พร้อมระดับความเสี่ยงวันหมดอายุ
               </div>
-              <ul class="landing-list">
-                <li>✔ แสดงปริมาณเลือดแยกตามกรุ๊ปและชนิดผลิตภัณฑ์ (LPRC, PRC, FFP, PC, Cryo)</li>
+              <ul class="landing-bullets">
+                <li>✔ แดชบอร์ดกรุ๊ปเลือด A / B / O / AB พร้อมระดับ Critical / Warning</li>
                 <li>✔ นำเข้าไฟล์ Excel / CSV จากระบบเดิมได้ทันที</li>
-                <li>✔ แสดงสถานะวันหมดอายุแบบ Critical / Warning ช่วยจัดคิวการใช้เลือด</li>
-                <li>✔ เหมาะกับทีมธนาคารเลือด ห้อง Lab และทีมระบบคุณภาพโรงพยาบาล</li>
+                <li>✔ ใช้ติดตามและเตรียมเลือดสำหรับหอผู้ป่วยและห้องผ่าตัด</li>
               </ul>
+              <div class="landing-stat-row">
+                <div class="landing-stat-chip">สำหรับทีมธนาคารเลือด / ห้อง Lab</div>
+                <div class="landing-stat-chip" style="background:#b91c1c;">เน้นความปลอดภัยของผู้ป่วย</div>
+                <div class="landing-stat-chip" style="background:#0f172a;">รองรับการ Audit ระบบคุณภาพ</div>
+              </div>
               <div class="landing-cta">
         """,
         unsafe_allow_html=True,
@@ -736,12 +753,12 @@ def render_landing_page():
             </div>
             <div>
               <img src="https://img.icons8.com/color/240/blood-bag.png" 
-                   style="display:block;margin:0 auto 12px auto;max-width:190px;">
+                   style="display:block;margin:0 auto 10px auto;max-width:180px;">
               <p style="text-align:center;font-weight:600;color:#b91c1c;">
-                มองเห็นภาพรวมคลังเลือดทั้งโรงพยาบาลในหน้าเดียว
+                เห็นคลังเลือดทั้งโรงพยาบาลแบบภาพรวม
               </p>
               <p style="text-align:center;font-size:.9rem;color:#4b5563;">
-                รองรับการใช้งานโดยทีมธนาคารเลือด, ห้อง Lab, พยาบาลหอผู้ป่วย และทีม Audit ระบบคุณภาพ
+                ช่วยวางแผนจัดการเลือดให้เพียงพอ ลดการหมดอายุก่อนใช้ และเตรียมพร้อมกรณีฉุกเฉิน
               </p>
             </div>
           </div>
@@ -750,7 +767,6 @@ def render_landing_page():
         unsafe_allow_html=True,
     )
 
-    # แถวล่าง: กล่องข้อมูลสรุปแบบตัวอย่าง (static)
     st.markdown("#### ตัวอย่างภาพรวมที่ระบบช่วยให้เห็นได้อย่างรวดเร็ว")
     st.markdown(
         """
@@ -766,7 +782,7 @@ def render_landing_page():
             <div style="font-size:.86rem;color:#6b7280;">การแจ้งเตือนวันหมดอายุ</div>
             <div style="margin-top:4px;font-size:1.05rem;font-weight:800;color:#b91c1c;">Critical + Warning</div>
             <div style="font-size:.9rem;color:#4b5563;margin-top:2px;">
-              แยกสีแดง / เหลือง ช่วยให้ทีมเห็นความเสี่ยงได้ทันที
+              เน้นถุงที่ต้องรีบใช้ก่อน ช่วยลดเลือดหมดอายุก่อนใช้งาน
             </div>
           </div>
         </div>
@@ -776,7 +792,7 @@ def render_landing_page():
 
 
 def render_login_page():
-    """หน้า Login แบบเต็มหน้าจอ"""
+    """หน้า Login"""
     st.markdown(
         """
         <div class="login-hero">
@@ -788,9 +804,9 @@ def render_login_page():
                 ช่วยให้ทีมธนาคารเลือดและห้อง Lab ตัดสินใจได้อย่างรวดเร็วและปลอดภัย
               </div>
               <ul style="font-size:.9rem;line-height:1.45;">
-                <li>แดชบอร์ด Real-time แสดงคงเหลือพร้อมระดับสัญญาณเตือน</li>
-                <li>นำเข้าไฟล์ Excel/CSV จากระบบเดิมได้ทันที</li>
-                <li>แสดงสถานะวันหมดอายุเป็นสีแดง/เหลืองอย่างชัดเจน</li>
+                <li>แดชบอร์ด Real-time สำหรับทีมธนาคารเลือด</li>
+                <li>นำเข้าไฟล์ Excel / CSV ได้</li>
+                <li>แจ้งเตือน Critical / Warning ชัดเจน</li>
               </ul>
               <div style="margin-top:12px;font-size:.8rem;background:rgba(15,23,42,.15);
                           display:inline-flex;padding:.3rem .7rem;border-radius:999px;">
@@ -837,7 +853,7 @@ def render_login_page():
 
 
 def render_dashboard_page():
-    """หน้า dashboard เดิม (หน้าหลัก เมื่อ login แล้ว)"""
+    """หน้า dashboard หลัก (หลัง login)"""
     auto_update_booking_to_release()
 
     c1, c2, _ = st.columns(3)
