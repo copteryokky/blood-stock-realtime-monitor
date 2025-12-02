@@ -10,14 +10,23 @@ from streamlit.components.v1 import html as st_html
 try:
     from streamlit_autorefresh import st_autorefresh
 except Exception:
-    def st_autorefresh(*args, **kwargs): return None
+    def st_autorefresh(*args, **kwargs): 
+        return None
 
 # ===== DB funcs =====
 from db import init_db, get_all_status, get_stock_by_blood, adjust_stock, reset_all_stock
 
-# ============ PAGE / THEME ============
-st.set_page_config(page_title="Blood Stock Real-time Monitor", page_icon="🩸", layout="wide")
-st.markdown("""
+# --------------------------------
+# CONFIG & CONSTANTS
+# --------------------------------
+st.set_page_config(
+    page_title="Blood Stock Real-time Monitor",
+    page_icon="🩸",
+    layout="wide"
+)
+
+st.markdown(
+    """
 <style>
 .block-container{padding-top:1.0rem;}
 h1,h2,h3{letter-spacing:.2px}
@@ -46,7 +55,6 @@ h1,h2,h3{letter-spacing:.2px}
 #expiry-banner .title{font-weight:900;font-size:1.02rem;color:#7f1d1d}
 #expiry-banner .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .55rem;border-radius:999px;font-weight:800;background:#ef4444;color:#fff;margin-left:.5rem}
 #expiry-banner .chip.warn{background:#f59e0b}
-#expiry-banner .chip.green{background:#22c55e}
 
 /* Flash */
 .flash{position:fixed; top:110px; right:24px; z-index:9999; color:#fff; padding:.7rem 1rem; border-radius:12px; font-weight:800; box-shadow:0 10px 24px rgba(0,0,0,.18)}
@@ -55,9 +63,11 @@ h1,h2,h3{letter-spacing:.2px}
 .flash.warning{background:#f59e0b}
 .flash.error{background:#ef4444}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# ============ CONFIG ============
+# ===== CONFIG =====
 BAG_MAX = 20
 CRITICAL_MAX = 4
 YELLOW_MAX = 15
@@ -65,42 +75,63 @@ AUTH_PASSWORD = "1234"
 FLASH_SECONDS = 2.5
 
 RENAME_TO_UI = {"Plasma": "FFP", "Platelets": "PC"}
-UI_TO_DB = {"LPRC": "LPRC", "PRC": "PRC", "FFP": "Plasma", "PC": "Platelets"}
+UI_TO_DB = {
+    "LPRC": "LPRC",
+    "PRC": "PRC",
+    "FFP": "Plasma",
+    "PC": "Platelets",
+}
 ALL_PRODUCTS_UI = ["LPRC", "PRC", "FFP", "Cryo", "PC"]
 
-STATUS_OPTIONS = ["ว่าง", "จอง", "จำหน่าย", "Exp", "หลุดจอง"]
+# คอลัมน์หลักที่ใช้เก็บใน session_state["entries"]
+ENTRY_COLS = [
+    "created_at",
+    "Exp date",
+    "Unit number",
+    "Group",
+    "Blood Components",
+    "Status",
+    "สถานะ(สี)",
+    "บันทึก",
+]
+
+# สถานะหลัก (แก้จาก "จำหน่าย" เป็น "จ่ายแล้ว")
+STATUS_OPTIONS = ["ว่าง", "จอง", "จ่ายแล้ว", "Exp", "หลุดจอง"]
 STATUS_COLOR = {
     "ว่าง": "🟢 ว่าง",
     "จอง": "🟠 จอง",
-    "จำหน่าย": "⚫ จำหน่าย",
+    "จ่ายแล้ว": "⚫ จ่ายแล้ว",
     "Exp": "🔴 Exp",
     "หลุดจอง": "🔵 หลุดจอง",
 }
 
-# ============ STATE ============
+# --------------------------------
+# STATE
+# --------------------------------
 def _init_state():
     st.session_state.setdefault("logged_in", False)
     st.session_state.setdefault("username", "")
     st.session_state.setdefault("page", "กรอกเลือด")
     st.session_state.setdefault("selected_bt", None)
     st.session_state.setdefault("flash", None)
+    st.session_state.setdefault("last_upload_token", None)
 
-    cols = ["created_at", "Exp date", "Unit number", "Group",
-            "Blood Components", "Status", "สถานะ(สี)", "บันทึก"]
     if "entries" not in st.session_state:
-        st.session_state["entries"] = pd.DataFrame(columns=cols)
+        st.session_state["entries"] = pd.DataFrame(columns=ENTRY_COLS)
     else:
-        for c in cols:
+        for c in ENTRY_COLS:
             if c not in st.session_state["entries"].columns:
                 st.session_state["entries"][c] = ""
-        st.session_state["entries"] = st.session_state["entries"][cols].copy()
+        st.session_state["entries"] = st.session_state["entries"][ENTRY_COLS].copy()
 
     if "activity" not in st.session_state:
         st.session_state["activity"] = []
 
 _init_state()
 
-# ============ HELPERS ============
+# --------------------------------
+# HELPER FUNCTIONS
+# --------------------------------
 def _safe_rerun():
     try:
         st.rerun()
@@ -146,6 +177,7 @@ def bag_color(status: str) -> str:
 
 
 def normalize_products(rows):
+    """สรุปจำนวนหน่วยตาม product_type จากข้อมูลใน db.get_stock_by_blood()"""
     d = {name: 0 for name in ALL_PRODUCTS_UI}
     for r in rows:
         name = str(r.get("product_type", "")).strip()
@@ -166,56 +198,8 @@ def get_global_cryo():
                 total += int(r.get("units", 0))
     return total
 
-# ---------- ฟังก์ชันสร้าง tooltip chart ใต้ถุงเลือด ----------
-def _build_chart_tooltip(blood_type: str, dist: dict | None) -> str:
-    if not dist:
-        dist = {}
-
-    total_units = sum(int(v) for v in dist.values() if v)
-    if total_units <= 0:
-        body = '<div class="bag-bars-empty">ไม่มีเลือดคงเหลือที่ยังไม่หมดอายุ</div>'
-    else:
-        max_v = max(int(v) for v in dist.values() if v)
-        rows_html = []
-        color_map = {
-            "LPRC": "#22c55e",
-            "PRC": "#0ea5e9",
-            "FFP": "#a855f7",
-            "Cryo": "#f97316",
-            "PC": "#eab308",
-        }
-        for p in ALL_PRODUCTS_UI:
-            v = int(dist.get(p, 0))
-            if v <= 0:
-                continue
-            width_pct = max(12, int(100 * v / max_v))
-            bar_color = color_map.get(p, "#22c55e")
-            rows_html.append(
-                f"""
-                <div class="bag-bar-row">
-                  <div class="bag-bar-label">{p}</div>
-                  <div class="bag-bar-track">
-                    <div class="bag-bar-fill" style="width:{width_pct}%;background:{bar_color};"></div>
-                  </div>
-                  <div class="bag-bar-value">{v}</div>
-                </div>
-                """
-            )
-        body = '<div class="bag-bars">' + "".join(rows_html) + "</div>"
-
-    return f"""
-    <div class="bag-tooltip">
-      <div class="bag-tooltip-card">
-        <div class="bag-tooltip-title">
-          <span>สรุปผลิตภัณฑ์กรุ๊ป {blood_type}</span>
-        </div>
-        {body}
-      </div>
-    </div>
-    """
-
-# ===== SVG: ถุงเลือด + คลื่นน้ำสมจริง + tooltip chart =====
-def bag_svg(blood_type: str, total: int, dist: dict | None = None, show_chart: bool = False) -> str:
+# ===== SVG: ถุงเลือด + คลื่นน้ำ 2 ชั้น =====
+def bag_svg(blood_type: str, total: int) -> str:
     status, _label, pct = compute_bag(total, BAG_MAX)
     fill = bag_color(status)
     letter_fill = {
@@ -251,11 +235,56 @@ def bag_svg(blood_type: str, total: int, dist: dict | None = None, show_chart: b
     wave_speed1 = 5.0
     wave_speed2 = 7.5
 
-    # ถ้าไม่มีเลือดเลย ไม่วาดน้ำ
-    if pct <= 0:
-        liquid_group = ""
-    else:
-        liquid_group = f"""
+    # ถ้า total = 0 ให้น้ำอยู่ต่ำสุด (แทบมองไม่เห็น)
+    if total <= 0:
+        water_y = inner_y0 + inner_h - 1
+
+    return f"""
+<div>
+  <style>
+    .bag-wrap{{display:flex;flex-direction:column;align-items:center;gap:10px;
+               font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial}}
+    .bag{{transition:transform .18s ease, filter .18s ease}}
+    .bag:hover{{transform:translateY(-2px);
+                filter:drop-shadow(0 10px 22px rgba(0,0,0,.12));}}
+    .wave-layer{{mix-blend-mode:screen;opacity:.92}}
+    @keyframes wave-move-1{{0%{{transform:translateX(0);}}
+                            100%{{transform:translateX(-80px);}}}}
+    @keyframes wave-move-2{{0%{{transform:translateX(0);}}
+                            100%{{transform:translateX(-60px);}}}}
+  </style>
+  <div class="bag-wrap">
+    <svg class="bag" width="170" height="230" viewBox="0 0 168 206"
+         xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <clipPath id="clip-{gid}">
+          <path d="M24,40 C24,24 38,14 58,14 L110,14 C130,14 144,24 144,40
+                   L144,172 C144,191 128,202 108,204 L56,204 C36,202 24,191 24,172 Z"/>
+        </clipPath>
+        <linearGradient id="liquid-{gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"  stop-color="{fill}" stop-opacity=".98"/>
+          <stop offset="55%" stop-color="{fill}" stop-opacity=".94"/>
+          <stop offset="100%" stop-color="{fill}" stop-opacity=".88"/>
+        </linearGradient>
+        <linearGradient id="liquid-soft-{gid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"  stop-color="{fill}" stop-opacity=".75"/>
+          <stop offset="100%" stop-color="{fill}" stop-opacity=".6"/>
+        </linearGradient>
+        <path id="wave1-{gid}" d="{wave1_d}" />
+        <path id="wave2-{gid}" d="{wave2_d}" />
+      </defs>
+
+      <!-- หูถุง -->
+      <circle cx="84" cy="10" r="7.5"
+              fill="#eef2ff" stroke="#dbe0ea" stroke-width="3"/>
+      <rect x="77.5" y="14" width="13" height="8" rx="3" fill="#e5e7eb"/>
+
+      <!-- ตัวถุง -->
+      <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
+               L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
+            fill="#ffffff" stroke="#800000" stroke-width="3"/>
+
+      <!-- ของเหลว + คลื่น -->
       <g clip-path="url(#clip-{gid})">
         <g transform="translate(24,{water_y:.1f})">
           <!-- ชั้นคลื่นหลัก -->
@@ -270,104 +299,36 @@ def bag_svg(blood_type: str, total: int, dist: dict | None = None, show_chart: b
             <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="80"/>
             <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="160"/>
           </g>
-          <!-- น้ำด้านล่าง -->
+          <!-- น้ำส่วนล่าง -->
           <rect y="{base_y+4:.1f}" width="220" height="220" fill="url(#liquid-{gid})"/>
         </g>
       </g>
-        """
 
-    chart_html = _build_chart_tooltip(blood_type, dist) if show_chart else ""
+      <!-- ป้าย max -->
+      <rect x="98" y="24" rx="10" ry="10" width="54" height="22"
+            fill="#ffffff" stroke="#e5e7eb"/>
+      <text x="125" y="40" text-anchor="middle"
+            font-size="12" fill="#374151">{BAG_MAX} max</text>
 
-    return f"""
-<div>
-  <style>
-    .bag-hover-wrap{{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;
-                     font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial}}
-    .bag-wrap{{display:flex;flex-direction:column;align-items:center;gap:10px;}}
-    .bag{{transition:transform .18s ease, filter .18s ease}}
-    .bag:hover{{transform:translateY(-2px);
-                filter:drop-shadow(0 10px 22px rgba(0,0,0,.12));}}
-    .wave-layer{{mix-blend-mode:screen;opacity:.92}}
-    @keyframes wave-move-1{{0%{{transform:translateX(0);}}
-                            100%{{transform:translateX(-80px);}}}}
-    @keyframes wave-move-2{{0%{{transform:translateX(0);}}
-                            100%{{transform:translateX(-60px);}}}}
-
-    .bag-tooltip{{position:absolute;top:-6px;left:50%;
-                  transform:translate(-50%,-100%) scale(.96);
-                  opacity:0;pointer-events:none;
-                  transition:opacity .18s ease, transform .18s ease;}}
-    .bag-hover-wrap:hover .bag-tooltip{{opacity:1;transform:translate(-50%,-112%) scale(1);}}
-    .bag-tooltip-card{{min-width:230px;max-width:260px;background:rgba(17,24,39,.97);
-                       color:#e5e7eb;border-radius:14px;padding:.7rem .85rem;
-                       box-shadow:0 14px 28px rgba(0,0,0,.35);font-size:11px;}}
-    .bag-tooltip-title{{font-weight:700;font-size:12px;margin-bottom:.35rem;
-                        display:flex;justify-content:space-between;align-items:center;}}
-    .bag-bars{{display:flex;flex-direction:column;gap:.25rem;}}
-    .bag-bars-empty{{font-size:11px;color:#e5e7eb;opacity:.85;}}
-    .bag-bar-row{{display:flex;align-items:center;gap:.35rem;}}
-    .bag-bar-label{{width:46px;font-weight:600;color:#e5e7eb;}}
-    .bag-bar-track{{flex:1;height:7px;border-radius:999px;background:rgba(148,163,184,.45);overflow:hidden;}}
-    .bag-bar-fill{{height:100%;border-radius:999px;}}
-    .bag-bar-value{{width:32px;text-align:right;font-variant-numeric:tabular-nums;}}
-  </style>
-  <div class="bag-hover-wrap">
-    <div class="bag-wrap">
-      <svg class="bag" width="170" height="230" viewBox="0 0 168 206"
-           xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <clipPath id="clip-{gid}">
-            <path d="M24,40 C24,24 38,14 58,14 L110,14 C130,14 144,24 144,40
-                     L144,172 C144,191 128,202 108,204 L56,204 C36,202 24,191 24,172 Z"/>
-          </clipPath>
-          <linearGradient id="liquid-{gid}" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"  stop-color="{fill}" stop-opacity=".98"/>
-            <stop offset="55%" stop-color="{fill}" stop-opacity=".94"/>
-            <stop offset="100%" stop-color="{fill}" stop-opacity=".88"/>
-          </linearGradient>
-          <linearGradient id="liquid-soft-{gid}" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"  stop-color="{fill}" stop-opacity=".75"/>
-            <stop offset="100%" stop-color="{fill}" stop-opacity=".60"/>
-          </linearGradient>
-          <path id="wave1-{gid}" d="{wave1_d}" />
-          <path id="wave2-{gid}" d="{wave2_d}" />
-        </defs>
-
-        <!-- หูถุง -->
-        <circle cx="84" cy="10" r="7.5"
-                fill="#eef2ff" stroke="#dbe0ea" stroke-width="3"/>
-        <rect x="77.5" y="14" width="13" height="8" rx="3" fill="#e5e7eb"/>
-
-        <!-- ตัวถุง -->
-        <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
-                 L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
-              fill="#ffffff" stroke="#800000" stroke-width="3"/>
-
-        {liquid_group}
-
-        <!-- ป้าย max -->
-        <rect x="98" y="24" rx="10" ry="10" width="54" height="22"
-              fill="#ffffff" stroke="#e5e7eb"/>
-        <text x="125" y="40" text-anchor="middle"
-              font-size="12" fill="#374151">{BAG_MAX} max</text>
-
-        <!-- ตัวอักษรกรุ๊ปเลือด -->
-        <text x="84" y="126" text-anchor="middle" font-size="32" font-weight="900"
-              style="paint-order: stroke fill"
-              stroke="#111827" stroke-width="4"
-              fill="{letter_fill}">{blood_type}</text>
-      </svg>
-    </div>
-    {chart_html}
+      <!-- ตัวอักษรกำกับกรุ๊ปเลือด -->
+      <text x="84" y="126" text-anchor="middle" font-size="32" font-weight="900"
+            style="paint-order: stroke fill"
+            stroke="#111827" stroke-width="4"
+            fill="{letter_fill}">{blood_type}</text>
+    </svg>
   </div>
 </div>
 """
 
-# ============ INIT DB ============
+# --------------------------------
+# INIT DB
+# --------------------------------
 if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
     init_db()
 
-# ===== utils with stability =====
+# --------------------------------
+# DB UTIL
+# --------------------------------
 def totals_overview():
     ov = get_all_status()
     return {d["blood_type"]: int(d.get("total", 0)) for d in ov}
@@ -419,7 +380,9 @@ def auto_update_booking_to_release():
     if updated_any:
         st.session_state["entries"] = df
 
-# ===== Expiry rules =====
+# --------------------------------
+# EXPIRY UTIL
+# --------------------------------
 def left_days_safe(d):
     try:
         if pd.isna(d):
@@ -457,58 +420,22 @@ def expiry_label(days: int | None) -> str:
 def render_minimal_banner(df):
     if df.empty:
         return
-    # แบ่งตามสี
-    df_days = df["_exp_days"]
-    red_mask = df_days <= 4  # รวมหมดอายุแล้วด้วย
-    yellow_mask = (df_days >= 5) & (df_days <= 10)
-    green_mask = df_days > 10
-
-    n_red = int(red_mask.sum())
-    n_yellow = int(yellow_mask.sum())
-    n_green = int(green_mask.sum())
-
-    if n_red + n_yellow + n_green == 0:
+    n_warn = int(((df["_exp_days"].notna()) & (df["_exp_days"] <= 10) & (df["_exp_days"] >= 5)).sum())
+    n_red = int(((df["_exp_days"].notna()) & (df["_exp_days"] <= 4) & (df["_exp_days"] >= 0)).sum())
+    n_exp = int(((df["_exp_days"].notna()) & (df["_exp_days"] < 0)).sum())
+    if (n_warn + n_red + n_exp) == 0:
         return
-
     st.markdown(
-        f"""
-        <div id="expiry-banner">
-          <div class="title">
-            ⏰ สถานะวันหมดอายุ (ทุกหน่วยในตาราง)
-            <span class="chip">แดง {n_red}</span>
-            <span class="chip warn">เหลือง {n_yellow}</span>
-            <span class="chip green">เขียว {n_green}</span>
-          </div>
-        </div>
-        """,
+        f"""<div id="expiry-banner"><div class="title">
+        ⏰ สถานะวันหมดอายุ — 
+        <span class="chip warn">เตือน {n_warn}</span>
+        <span class="chip">วิกฤต {n_red+n_exp}</span></div></div>""",
         unsafe_allow_html=True,
     )
 
-# ===== คำนวณ distribution ตามกรุ๊ป ใช้เฉพาะที่ยังไม่หมดอายุ =====
-def non_expired_distribution_by_group():
-    df = st.session_state["entries"]
-    result = {bt: {p: 0 for p in ALL_PRODUCTS_UI} for bt in ["A", "B", "O", "AB"]}
-    if df.empty:
-        return result
-
-    work = df.copy()
-    work["_exp_days"] = work["Exp date"].apply(left_days_safe)
-
-    # เฉพาะที่มีวันหมดอายุ และยังไม่หมดอายุ
-    mask = work["_exp_days"].notna() & (work["_exp_days"] >= 0)
-    # ไม่เอาสถานะจำหน่าย / Exp ออกจากกราฟ
-    mask &= ~work["Status"].isin(["จำหน่าย", "Exp"])
-    work = work[mask]
-
-    for _, r in work.iterrows():
-        bt = str(r.get("Group", "")).strip()
-        comp = str(r.get("Blood Components", "")).strip()
-        if bt in result and comp in result[bt]:
-            result[bt][comp] += 1
-
-    return result
-
-# ============ SIDEBAR ============
+# --------------------------------
+# SIDEBAR
+# --------------------------------
 with st.sidebar:
     if st.session_state.get("logged_in"):
         name = (st.session_state.get("username") or "staff").strip()
@@ -562,18 +489,23 @@ with st.sidebar:
         st.session_state["page"] = "กรอกเลือด"
         _safe_rerun()
 
-# ============ HEADER ============
+# --------------------------------
+# HEADER
+# --------------------------------
 st.title("Blood Stock Real-time Monitor")
 st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 show_flash()
 
-# ---------- หน้า: กรอกเลือด ----------
+# --------------------------------
+# PAGE: กรอกเลือด
+# --------------------------------
 if st.session_state["page"] == "กรอกเลือด":
     if not st.session_state["logged_in"]:
         st.warning("ต้องล็อกอินก่อนจึงจะใช้งานเมนูนี้ได้")
     else:
         st.subheader("กรอกเลือด")
 
+        # ---- แบบฟอร์มกรอกทีละรายการ ----
         with st.form("blood_entry_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
@@ -613,7 +545,7 @@ if st.session_state["page"] == "กรอกเลือด":
                         group, component, +1, note or "inbound", st.session_state.get("username") or "admin"
                     )
                     add_activity("INBOUND", group, component, +1, note)
-                elif status in ["จำหน่าย", "Exp"]:
+                elif status in ["จ่ายแล้ว", "Exp"]:
                     apply_stock_change(
                         group, component, -1, note or status, st.session_state.get("username") or "admin"
                     )
@@ -625,7 +557,7 @@ if st.session_state["page"] == "กรอกเลือด":
                 st.error(f"ปรับคลังไม่สำเร็จ: {e}")
             _safe_rerun()
 
-        # ===== นำเข้า Excel / CSV =====
+        # ---- นำเข้า Excel / CSV ----
         st.markdown("### 📁 นำเข้าจาก Excel/CSV (อัปโหลดแล้วลงตารางอัตโนมัติ)")
         up = st.file_uploader("เลือกไฟล์ (.xlsx, .xls, .csv)", type=["xlsx", "xls", "csv"], key="uploader_file")
         mode_merge = st.radio(
@@ -637,141 +569,153 @@ if st.session_state["page"] == "กรอกเลือด":
         )
 
         if up is not None:
-            try:
-                if up.name.lower().endswith(".csv"):
-                    df_file = pd.read_csv(up)
-                else:
-                    try:
-                        df_file = pd.read_excel(up)
-                    except Exception as e:
-                        st.error("อ่าน Excel ไม่ได้ (อาจขาด openpyxl). แนะนำเพิ่ม openpyxl ใน requirements.txt หรืออัปโหลด CSV แทน")
-                        st.info(str(e))
-                        df_file = pd.DataFrame()
+            # token ไฟล์เพื่อกันนำเข้าซ้ำทุกครั้งที่มี rerun
+            token = (up.name, up.size)
+            if st.session_state.get("last_upload_token") != token:
+                st.session_state["last_upload_token"] = token
 
-                if not df_file.empty:
-                    col_map = {
-                        "created_at": "created_at",
-                        "Created": "created_at",
-                        "Created at": "created_at",
-                        "Exp date": "Exp date",
-                        "Exp": "Exp date",
-                        "exp_date": "Exp date",
-                        "Unit": "Unit number",
-                        "Unit number": "Unit number",
-                        "Group": "Group",
-                        "Blood Components": "Blood Components",
-                        "Components": "Blood Components",
-                        "Status": "Status",
-                        "Note": "บันทึก",
-                        "Remarks": "บันทึก",
-                        "บันทึก": "บันทึก",
-                    }
-                    df_file = df_file.rename(columns={c: col_map.get(str(c).strip(), c) for c in df_file.columns})
-
-                    # map สถานะจากไฟล์ภาษาอังกฤษ -> สถานะไทยในระบบ
-                    status_map_en2th = {
-                        "Available": "ว่าง",
-                        "AVAILABLE": "ว่าง",
-                        "ReadyToIssue": "จอง",
-                        "Ready to issue": "จอง",
-                        "Released": "จำหน่าย",
-                        "RELEASED": "จำหน่าย",
-                        "Expired": "Exp",
-                        "ReleasedExpired": "Exp",
-                        "Out": "จำหน่าย",
-                    }
-                    if "Status" in df_file.columns:
-                        df_file["Status"] = df_file["Status"].map(
-                            lambda s: status_map_en2th.get(str(s).strip(), str(s).strip())
-                        )
-
-                    for c in [
-                        "created_at",
-                        "Exp date",
-                        "Unit number",
-                        "Group",
-                        "Blood Components",
-                        "Status",
-                        "บันทึก",
-                    ]:
-                        if c not in df_file.columns:
-                            df_file[c] = ""
-                    df_file = df_file[
-                        ["created_at", "Exp date", "Unit number", "Group", "Blood Components", "Status", "บันทึก"]
-                    ].copy()
-
-                    df_file["สถานะ(สี)"] = df_file["Status"].map(lambda s: STATUS_COLOR.get(str(s), str(s)))
-
-                    if mode_merge.startswith("แทนที่"):
-                        st.session_state["entries"] = pd.DataFrame(
-                            columns=[
-                                "created_at",
-                                "Exp date",
-                                "Unit number",
-                                "Group",
-                                "Blood Components",
-                                "Status",
-                                "สถานะ(สี)",
-                                "บันทึก",
-                            ]
-                        )
-
-                    applied = failed = 0
-                    for _, r in df_file.iterrows():
-                        g = str(r["Group"]).strip() or "A"
-                        comp = str(r["Blood Components"]).strip() or "LPRC"
-                        stt = str(r["Status"]).strip() or "ว่าง"
-                        nt = str(r["บันทึก"]).strip()
-
-                        st.session_state["entries"] = pd.concat(
-                            [
-                                st.session_state["entries"],
-                                pd.DataFrame(
-                                    [
-                                        {
-                                            "created_at": str(
-                                                r["created_at"] or datetime.now().strftime("%Y/%m/%d")
-                                            ),
-                                            "Exp date": str(r["Exp date"] or ""),
-                                            "Unit number": str(r["Unit number"] or ""),
-                                            "Group": g,
-                                            "Blood Components": comp,
-                                            "Status": stt,
-                                            "สถานะ(สี)": STATUS_COLOR.get(stt, stt),
-                                            "บันทึก": nt,
-                                        }
-                                    ]
-                                ),
-                            ],
-                            ignore_index=True,
-                        )
-
+                # อ่านไฟล์
+                try:
+                    if up.name.lower().endswith(".csv"):
+                        df_file = pd.read_csv(up)
+                    else:
                         try:
-                            if stt in ["ว่าง", "หลุดจอง"]:
-                                apply_stock_change(
-                                    g, comp, +1, nt or "import", st.session_state.get("username") or "admin"
-                                )
-                                add_activity("INBOUND", g, comp, +1, f"import: {nt}")
-                            elif stt in ["จำหน่าย", "Exp"]:
-                                apply_stock_change(
-                                    g, comp, -1, nt or "import-out", st.session_state.get("username") or "admin"
-                                )
-                                add_activity("OUTBOUND", g, comp, -1, f"import: {nt}")
-                            else:
-                                add_activity("BOOK", g, comp, 0, f"import: {nt}")
-                            applied += 1
-                        except Exception:
-                            failed += 1
+                            df_file = pd.read_excel(up)
+                        except Exception as e:
+                            st.error(
+                                "อ่าน Excel ไม่ได้ (อาจขาด openpyxl). "
+                                "แนะนำเพิ่ม openpyxl ใน requirements.txt หรืออัปโหลด CSV แทน"
+                            )
+                            st.info(str(e))
+                            df_file = pd.DataFrame()
 
-                    flash(
-                        f"นำเข้าเสร็จสิ้น ✅ สำเร็จ {applied} รายการ"
-                        f"{' (ล้มเหลว '+str(failed)+')' if failed else ''}"
-                    )
-                    _safe_rerun()
-            except Exception as e:
-                st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
+                    if not df_file.empty:
+                        # mapping header ให้มาตรงกับคอลัมน์หลัก
+                        col_map = {
+                            "created_at": "created_at",
+                            "Created": "created_at",
+                            "Created at": "created_at",
+                            "Exp date": "Exp date",
+                            "Exp": "Exp date",
+                            "exp_date": "Exp date",
+                            "Unit": "Unit number",
+                            "Unit number": "Unit number",
+                            "Group": "Group",
+                            "Blood Components": "Blood Components",
+                            "Components": "Blood Components",
+                            "Status": "Status",
+                            "Note": "บันทึก",
+                            "Remarks": "บันทึก",
+                            "บันทึก": "บันทึก",
+                        }
+                        df_file = df_file.rename(
+                            columns={c: col_map.get(str(c).strip(), c) for c in df_file.columns}
+                        )
 
-        # ===== ตารางสรุป (แก้ไขได้) =====
+                        # แปลงสถานะจากอังกฤษ -> ไทย
+                        status_map_en2th = {
+                            "Available": "ว่าง",        # พร้อมใช้
+                            "ReadyToIssue": "จอง",      # จอง
+                            "Released": "จ่ายแล้ว",     # จ่ายแล้ว
+                            "Expired": "Exp",
+                            "ReleasedExpired": "Exp",
+                            "Out": "จ่ายแล้ว",
+                        }
+                        if "Status" in df_file.columns:
+                            df_file["Status"] = df_file["Status"].map(
+                                lambda s: status_map_en2th.get(str(s).strip(), str(s).strip())
+                            )
+
+                        # เติมคอลัมน์ที่จำเป็น
+                        for c in ["created_at", "Exp date", "Unit number", "Group",
+                                  "Blood Components", "Status", "บันทึก"]:
+                            if c not in df_file.columns:
+                                df_file[c] = ""
+                        df_file = df_file[
+                            ["created_at", "Exp date", "Unit number", "Group",
+                             "Blood Components", "Status", "บันทึก"]
+                        ].copy()
+
+                        # คอลัมน์สถานะ(สี)
+                        df_file["สถานะ(สี)"] = df_file["Status"].map(
+                            lambda s: STATUS_COLOR.get(str(s), str(s))
+                        )
+
+                        # ถ้าเลือก "แทนที่ทั้งหมด" ให้ล้าง entries + reset stock ก่อน
+                        replace_mode = mode_merge.startswith("แทนที่")
+                        if replace_mode:
+                            st.session_state["entries"] = pd.DataFrame(columns=ENTRY_COLS)
+                            st.session_state["activity"] = []
+                            # reset stock ใน db ให้เป็นศูนย์แล้วค่อย build ใหม่
+                            reset_all_stock(st.session_state.get("username", "admin"))
+
+                        # เตรียม list สำหรับสร้าง DataFrame ใหม่
+                        new_rows = []
+                        applied = failed = 0
+
+                        for _, r in df_file.iterrows():
+                            g = str(r["Group"]).strip() or "A"
+                            comp = str(r["Blood Components"]).strip() or "LPRC"
+                            stt = str(r["Status"]).strip() or "ว่าง"
+                            nt = str(r["บันทึก"]).strip()
+
+                            row_dict = {
+                                "created_at": str(
+                                    r["created_at"] or datetime.now().strftime("%Y/%m/%d")
+                                ),
+                                "Exp date": str(r["Exp date"] or ""),
+                                "Unit number": str(r["Unit number"] or ""),
+                                "Group": g,
+                                "Blood Components": comp,
+                                "Status": stt,
+                                "สถานะ(สี)": STATUS_COLOR.get(stt, stt),
+                                "บันทึก": nt,
+                            }
+                            new_rows.append(row_dict)
+
+                            # อัปเดตคลัง: สำหรับไฟล์ snapshot เรานับเฉพาะ "ว่าง" และ "หลุดจอง"
+                            try:
+                                if stt in ["ว่าง", "หลุดจอง"]:
+                                    apply_stock_change(
+                                        g, comp, +1, nt or "import", st.session_state.get("username") or "admin"
+                                    )
+                                    add_activity("INBOUND", g, comp, +1, f"import: {nt}")
+                                elif stt in ["จ่ายแล้ว"]:
+                                    # เป็นสถานะที่ออกไปแล้ว ไม่เพิ่มสต็อก
+                                    add_activity("OUTBOUND", g, comp, 0, f"import: {nt}")
+                                else:
+                                    # Exp / จอง ฯลฯ ที่ไม่อยากให้ไปเพิ่มสต็อก
+                                    add_activity("INFO", g, comp, 0, f"import: {nt}")
+                                applied += 1
+                            except Exception:
+                                failed += 1
+
+                        new_df = pd.DataFrame(new_rows, columns=ENTRY_COLS)
+
+                        if replace_mode:
+                            # ต้องการให้จำนวนแถวตรงกับไฟล์เป๊ะ ๆ
+                            st.session_state["entries"] = new_df
+                        else:
+                            # โหมด merge: รวมกับของเดิม แล้วลบแถวซ้ำออกตาม Unit+Group+Component
+                            combined = pd.concat(
+                                [st.session_state["entries"], new_df],
+                                ignore_index=True,
+                            )
+                            combined = combined.drop_duplicates(
+                                subset=["Unit number", "Group", "Blood Components"],
+                                keep="last",
+                            )
+                            st.session_state["entries"] = combined
+
+                        flash(
+                            f"นำเข้าเสร็จสิ้น ✅ สำเร็จ {applied} รายการ"
+                            f"{' (ล้มเหลว '+str(failed)+')' if failed else ''}"
+                        )
+
+                except Exception as e:
+                    st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
+
+        # ---- ตารางสรุป (แก้ไขได้) + ลำดับ ----
         st.markdown("### ตารางสรุป (แก้ไขได้)")
         df_vis = st.session_state["entries"].copy(deep=True)
 
@@ -782,7 +726,6 @@ if st.session_state["page"] == "กรอกเลือด":
         df_vis["วันหมดอายุนับถอยหลัง (วัน)"] = df_vis["_exp_days"]
         df_vis["สถานะวันหมดอายุ"] = df_vis["_exp_days"].apply(expiry_label)
 
-        # แบนเนอร์สรุปจำนวน แดง/เหลือง/เขียว
         render_minimal_banner(df_vis)
 
         cols_show = [
@@ -799,7 +742,11 @@ if st.session_state["page"] == "กรอกเลือด":
         ]
         df_vis = df_vis.reindex(columns=cols_show)
 
+        # เพิ่มคอลัมน์ลำดับ (index ที่มองเห็น)
+        df_vis.insert(0, "ลำดับ", range(1, len(df_vis) + 1))
+
         col_cfg = {
+            "ลำดับ": st.column_config.NumberColumn("ลำดับ", disabled=True),
             "created_at": st.column_config.TextColumn("Created at (YYYY/MM/DD)"),
             "Exp date": st.column_config.DateColumn("Exp date", format="YYYY/MM/DD"),
             "วันหมดอายุนับถอยหลัง (วัน)": st.column_config.NumberColumn(
@@ -825,8 +772,12 @@ if st.session_state["page"] == "กรอกเลือด":
             key="entries_editor",
         )
 
+        # ถ้ามีการแก้ไขตาราง -> sync กลับไปที่ session_state["entries"]
         if not edited.equals(df_vis):
             out = edited.copy()
+            # ตัดคอลัมน์ "ลำดับ" ทิ้งก่อนเก็บจริง
+            if "ลำดับ" in out.columns:
+                out = out.drop(columns=["ลำดับ"])
 
             def _d2str(x):
                 try:
@@ -844,21 +795,14 @@ if st.session_state["page"] == "กรอกเลือด":
                     return str(x)
 
             out["Exp date"] = out["Exp date"].apply(_d2str)
-            keep = [
-                "created_at",
-                "Exp date",
-                "Unit number",
-                "Group",
-                "Blood Components",
-                "Status",
-                "สถานะ(สี)",
-                "บันทึก",
-            ]
+            keep = ENTRY_COLS
             st.session_state["entries"] = out[keep].reset_index(drop=True)
             flash("อัปเดตตารางแล้ว ✅")
             _safe_rerun()
 
-# ---------- หน้า: หน้าหลัก ----------
+# --------------------------------
+# PAGE: หน้าหลัก
+# --------------------------------
 elif st.session_state["page"] == "หน้าหลัก":
     auto_update_booking_to_release()
 
@@ -873,19 +817,12 @@ elif st.session_state["page"] == "หน้าหลัก":
     )
 
     totals = totals_overview()
-    # distribution เฉพาะที่ยังไม่หมดอายุ (ใช้ใน tooltip + กราฟด้านล่าง)
-    dist_all = non_expired_distribution_by_group()
-
     blood_types = ["A", "B", "O", "AB"]
     cols = st.columns(4)
     for i, bt in enumerate(blood_types):
         with cols[i]:
             st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
-            st_html(
-                bag_svg(bt, totals.get(bt, 0), dist=dist_all.get(bt), show_chart=True),
-                height=270,
-                scrolling=False,
-            )
+            st_html(bag_svg(bt, totals.get(bt, 0)), height=270, scrolling=False)
             if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
                 st.session_state["selected_bt"] = bt
                 _safe_rerun()
@@ -895,16 +832,10 @@ elif st.session_state["page"] == "หน้าหลัก":
     st.subheader(f"รายละเอียดกรุ๊ป {sel}")
     _L, _M, _R = st.columns([1, 1, 1])
     with _M:
-        st_html(
-            bag_svg(sel, totals.get(sel, 0), dist=dist_all.get(sel), show_chart=True),
-            height=270,
-            scrolling=False,
-        )
+        st_html(bag_svg(sel, totals.get(sel, 0)), height=270, scrolling=False)
 
-    # ใช้ distribution เฉพาะที่ยังไม่หมดอายุสำหรับกราฟแท่ง
-    dist_sel = dist_all.get(sel, {p: 0 for p in ALL_PRODUCTS_UI})
-    # Cryo เป็น global ถ้าต้องการจะใส่เพิ่มจาก DB ก็ทำได้ แต่ตอนนี้ 0 ถ้าไม่มีข้อมูล
-    # dist_sel["Cryo"] = get_global_cryo()
+    dist_sel = products_of(sel)
+    dist_sel["Cryo"] = get_global_cryo()
 
     df = pd.DataFrame([{"product_type": k, "units": int(v)} for k, v in dist_sel.items()])
     df["product_type"] = pd.Categorical(df["product_type"], categories=ALL_PRODUCTS_UI, ordered=True)
@@ -917,28 +848,34 @@ elif st.session_state["page"] == "หน้าหลัก":
         return "#22c55e"
 
     df["color"] = df["units"].apply(color_for)
-    ymax = max(10, int(df["units"].max() * 1.25))
 
-    bars = alt.Chart(df).mark_bar().encode(
-        x=alt.X("product_type:N", sort=ALL_PRODUCTS_UI, title="ประเภทผลิตภัณฑ์"),
-        y=alt.Y("units:Q", title="จำนวนหน่วย (unit)", scale=alt.Scale(domainMin=0, domainMax=ymax)),
-        color=alt.Color("color:N", scale=None, legend=None),
-        tooltip=["product_type", "units"],
-    )
-    text = alt.Chart(df).mark_text(
-        align="center",
-        baseline="bottom",
-        dy=-4,
-        fontSize=13,
-    ).encode(
-        x=alt.X("product_type:N", sort=ALL_PRODUCTS_UI),
-        y="units:Q",
-        text="units:Q",
-    )
-    chart = alt.layer(bars, text).properties(height=340).configure_view(strokeOpacity=0)
-    st.altair_chart(chart, use_container_width=True)
+    # สำหรับกราฟ: แสดงเฉพาะที่มีหน่วย > 0 (ไม่ให้แสดงของที่ไม่มี หรืออาจหมดอายุแล้ว)
+    df_chart = df[df["units"] > 0].copy()
+    ymax = max(10, int(df_chart["units"].max() * 1.25)) if not df_chart.empty else 10
 
-    # ตารางสรุป: เอาคอลัมน์ color ออก เหลือแค่ product_type + units
+    if df_chart.empty:
+        st.info("ยังไม่มีหน่วยเลือดที่ใช้งานได้สำหรับกรุ๊ปนี้")
+    else:
+        bars = alt.Chart(df_chart).mark_bar().encode(
+            x=alt.X("product_type:N", sort=ALL_PRODUCTS_UI, title="ประเภทผลิตภัณฑ์"),
+            y=alt.Y("units:Q", title="จำนวนหน่วย (unit)", scale=alt.Scale(domainMin=0, domainMax=ymax)),
+            color=alt.Color("color:N", scale=None, legend=None),
+            tooltip=["product_type", "units"],
+        )
+        text = alt.Chart(df_chart).mark_text(
+            align="center",
+            baseline="bottom",
+            dy=-4,
+            fontSize=13,
+        ).encode(
+            x=alt.X("product_type:N", sort=ALL_PRODUCTS_UI),
+            y="units:Q",
+            text="units:Q",
+        )
+        chart = alt.layer(bars, text).properties(height=340).configure_view(strokeOpacity=0)
+        st.altair_chart(chart, use_container_width=True)
+
+    # ตารางสรุปหน่วยตาม product type (ตัดคอลัมน์ color ออก ตามที่ขอ)
     st.dataframe(
         df.sort_values(by="product_type")[["product_type", "units"]],
         use_container_width=True,
@@ -951,7 +888,9 @@ elif st.session_state["page"] == "หน้าหลัก":
     else:
         st.info("ยังไม่มีรายการความเคลื่อนไหว")
 
-# ========== ปุ่มรีเซ็ตสต็อก ==========
+# --------------------------------
+# ปุ่มรีเซ็ตสต็อกทั้งหมด
+# --------------------------------
 st.divider()
 st.markdown("### ⚠️ จัดการระบบ")
 if st.session_state.get("logged_in"):
