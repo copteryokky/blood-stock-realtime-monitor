@@ -46,6 +46,7 @@ h1,h2,h3{letter-spacing:.2px}
 #expiry-banner .title{font-weight:900;font-size:1.02rem;color:#7f1d1d}
 #expiry-banner .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .55rem;border-radius:999px;font-weight:800;background:#ef4444;color:#fff;margin-left:.5rem}
 #expiry-banner .chip.warn{background:#f59e0b}
+#expiry-banner .chip.green{background:#22c55e}
 
 /* Flash */
 .flash{position:fixed; top:110px; right:24px; z-index:9999; color:#fff; padding:.7rem 1rem; border-radius:12px; font-weight:800; box-shadow:0 10px 24px rgba(0,0,0,.18)}
@@ -165,8 +166,56 @@ def get_global_cryo():
                 total += int(r.get("units", 0))
     return total
 
-# ===== SVG: ถุงเลือด + คลื่นน้ำสมจริงมากขึ้น =====
-def bag_svg(blood_type: str, total: int) -> str:
+# ---------- ฟังก์ชันสร้าง tooltip chart ใต้ถุงเลือด ----------
+def _build_chart_tooltip(blood_type: str, dist: dict | None) -> str:
+    if not dist:
+        dist = {}
+
+    total_units = sum(int(v) for v in dist.values() if v)
+    if total_units <= 0:
+        body = '<div class="bag-bars-empty">ไม่มีเลือดคงเหลือที่ยังไม่หมดอายุ</div>'
+    else:
+        max_v = max(int(v) for v in dist.values() if v)
+        rows_html = []
+        color_map = {
+            "LPRC": "#22c55e",
+            "PRC": "#0ea5e9",
+            "FFP": "#a855f7",
+            "Cryo": "#f97316",
+            "PC": "#eab308",
+        }
+        for p in ALL_PRODUCTS_UI:
+            v = int(dist.get(p, 0))
+            if v <= 0:
+                continue
+            width_pct = max(12, int(100 * v / max_v))
+            bar_color = color_map.get(p, "#22c55e")
+            rows_html.append(
+                f"""
+                <div class="bag-bar-row">
+                  <div class="bag-bar-label">{p}</div>
+                  <div class="bag-bar-track">
+                    <div class="bag-bar-fill" style="width:{width_pct}%;background:{bar_color};"></div>
+                  </div>
+                  <div class="bag-bar-value">{v}</div>
+                </div>
+                """
+            )
+        body = '<div class="bag-bars">' + "".join(rows_html) + "</div>"
+
+    return f"""
+    <div class="bag-tooltip">
+      <div class="bag-tooltip-card">
+        <div class="bag-tooltip-title">
+          <span>สรุปผลิตภัณฑ์กรุ๊ป {blood_type}</span>
+        </div>
+        {body}
+      </div>
+    </div>
+    """
+
+# ===== SVG: ถุงเลือด + คลื่นน้ำสมจริง + tooltip chart =====
+def bag_svg(blood_type: str, total: int, dist: dict | None = None, show_chart: bool = False) -> str:
     status, _label, pct = compute_bag(total, BAG_MAX)
     fill = bag_color(status)
     letter_fill = {
@@ -182,7 +231,6 @@ def bag_svg(blood_type: str, total: int) -> str:
     water_y = inner_y0 + (inner_h - water_h)
     gid = f"g_{blood_type}"
 
-    # รูปร่างคลื่นหลัก/รอง
     base_y = 20.0
     amp1 = 5 + 6 * (pct / 100.0)
     amp2 = amp1 * 0.6
@@ -203,11 +251,39 @@ def bag_svg(blood_type: str, total: int) -> str:
     wave_speed1 = 5.0
     wave_speed2 = 7.5
 
+    # ถ้าไม่มีเลือดเลย ไม่วาดน้ำ
+    if pct <= 0:
+        liquid_group = ""
+    else:
+        liquid_group = f"""
+      <g clip-path="url(#clip-{gid})">
+        <g transform="translate(24,{water_y:.1f})">
+          <!-- ชั้นคลื่นหลัก -->
+          <g class="wave-layer" style="animation:wave-move-1 {wave_speed1}s linear infinite;">
+            <use href="#wave1-{gid}" fill="url(#liquid-{gid})" x="0"/>
+            <use href="#wave1-{gid}" fill="url(#liquid-{gid})" x="80"/>
+            <use href="#wave1-{gid}" fill="url(#liquid-{gid})" x="160"/>
+          </g>
+          <!-- ชั้นคลื่นรอง -->
+          <g class="wave-layer" style="animation:wave-move-2 {wave_speed2}s linear infinite;">
+            <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="0"/>
+            <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="80"/>
+            <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="160"/>
+          </g>
+          <!-- น้ำด้านล่าง -->
+          <rect y="{base_y+4:.1f}" width="220" height="220" fill="url(#liquid-{gid})"/>
+        </g>
+      </g>
+        """
+
+    chart_html = _build_chart_tooltip(blood_type, dist) if show_chart else ""
+
     return f"""
 <div>
   <style>
-    .bag-wrap{{display:flex;flex-direction:column;align-items:center;gap:10px;
-               font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial}}
+    .bag-hover-wrap{{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;
+                     font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial}}
+    .bag-wrap{{display:flex;flex-direction:column;align-items:center;gap:10px;}}
     .bag{{transition:transform .18s ease, filter .18s ease}}
     .bag:hover{{transform:translateY(-2px);
                 filter:drop-shadow(0 10px 22px rgba(0,0,0,.12));}}
@@ -216,70 +292,73 @@ def bag_svg(blood_type: str, total: int) -> str:
                             100%{{transform:translateX(-80px);}}}}
     @keyframes wave-move-2{{0%{{transform:translateX(0);}}
                             100%{{transform:translateX(-60px);}}}}
+
+    .bag-tooltip{{position:absolute;top:-6px;left:50%;
+                  transform:translate(-50%,-100%) scale(.96);
+                  opacity:0;pointer-events:none;
+                  transition:opacity .18s ease, transform .18s ease;}}
+    .bag-hover-wrap:hover .bag-tooltip{{opacity:1;transform:translate(-50%,-112%) scale(1);}}
+    .bag-tooltip-card{{min-width:230px;max-width:260px;background:rgba(17,24,39,.97);
+                       color:#e5e7eb;border-radius:14px;padding:.7rem .85rem;
+                       box-shadow:0 14px 28px rgba(0,0,0,.35);font-size:11px;}}
+    .bag-tooltip-title{{font-weight:700;font-size:12px;margin-bottom:.35rem;
+                        display:flex;justify-content:space-between;align-items:center;}}
+    .bag-bars{{display:flex;flex-direction:column;gap:.25rem;}}
+    .bag-bars-empty{{font-size:11px;color:#e5e7eb;opacity:.85;}}
+    .bag-bar-row{{display:flex;align-items:center;gap:.35rem;}}
+    .bag-bar-label{{width:46px;font-weight:600;color:#e5e7eb;}}
+    .bag-bar-track{{flex:1;height:7px;border-radius:999px;background:rgba(148,163,184,.45);overflow:hidden;}}
+    .bag-bar-fill{{height:100%;border-radius:999px;}}
+    .bag-bar-value{{width:32px;text-align:right;font-variant-numeric:tabular-nums;}}
   </style>
-  <div class="bag-wrap">
-    <svg class="bag" width="170" height="230" viewBox="0 0 168 206"
-         xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <clipPath id="clip-{gid}">
-          <path d="M24,40 C24,24 38,14 58,14 L110,14 C130,14 144,24 144,40
-                   L144,172 C144,191 128,202 108,204 L56,204 C36,202 24,191 24,172 Z"/>
-        </clipPath>
-        <linearGradient id="liquid-{gid}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"  stop-color="{fill}" stop-opacity=".98"/>
-          <stop offset="55%" stop-color="{fill}" stop-opacity=".94"/>
-          <stop offset="100%" stop-color="{fill}" stop-opacity=".88"/>
-        </linearGradient>
-        <linearGradient id="liquid-soft-{gid}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"  stop-color="{fill}" stop-opacity=".75"/>
-          <stop offset="100%" stop-color="{fill}" stop-opacity=".6"/>
-        </linearGradient>
-        <path id="wave1-{gid}" d="{wave1_d}" />
-        <path id="wave2-{gid}" d="{wave2_d}" />
-      </defs>
+  <div class="bag-hover-wrap">
+    <div class="bag-wrap">
+      <svg class="bag" width="170" height="230" viewBox="0 0 168 206"
+           xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <clipPath id="clip-{gid}">
+            <path d="M24,40 C24,24 38,14 58,14 L110,14 C130,14 144,24 144,40
+                     L144,172 C144,191 128,202 108,204 L56,204 C36,202 24,191 24,172 Z"/>
+          </clipPath>
+          <linearGradient id="liquid-{gid}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"  stop-color="{fill}" stop-opacity=".98"/>
+            <stop offset="55%" stop-color="{fill}" stop-opacity=".94"/>
+            <stop offset="100%" stop-color="{fill}" stop-opacity=".88"/>
+          </linearGradient>
+          <linearGradient id="liquid-soft-{gid}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"  stop-color="{fill}" stop-opacity=".75"/>
+            <stop offset="100%" stop-color="{fill}" stop-opacity=".60"/>
+          </linearGradient>
+          <path id="wave1-{gid}" d="{wave1_d}" />
+          <path id="wave2-{gid}" d="{wave2_d}" />
+        </defs>
 
-      <!-- หูถุง -->
-      <circle cx="84" cy="10" r="7.5"
-              fill="#eef2ff" stroke="#dbe0ea" stroke-width="3"/>
-      <rect x="77.5" y="14" width="13" height="8" rx="3" fill="#e5e7eb"/>
+        <!-- หูถุง -->
+        <circle cx="84" cy="10" r="7.5"
+                fill="#eef2ff" stroke="#dbe0ea" stroke-width="3"/>
+        <rect x="77.5" y="14" width="13" height="8" rx="3" fill="#e5e7eb"/>
 
-      <!-- ตัวถุง -->
-      <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
-               L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
-            fill="#ffffff" stroke="#800000" stroke-width="3"/>
+        <!-- ตัวถุง -->
+        <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
+                 L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
+              fill="#ffffff" stroke="#800000" stroke-width="3"/>
 
-      <!-- ของเหลว + คลื่น -->
-      <g clip-path="url(#clip-{gid})">
-        <!-- ชั้นคลื่นหลัก -->
-        <g transform="translate(24,{water_y:.1f})">
-          <g class="wave-layer" style="animation:wave-move-1 {wave_speed1}s linear infinite;">
-            <use href="#wave1-{gid}" fill="url(#liquid-{gid})" x="0"/>
-            <use href="#wave1-{gid}" fill="url(#liquid-{gid})" x="80"/>
-            <use href="#wave1-{gid}" fill="url(#liquid-{gid})" x="160"/>
-          </g>
-          <!-- ชั้นคลื่นรอง (เลเยอร์ 2) -->
-          <g class="wave-layer" style="animation:wave-move-2 {wave_speed2}s linear infinite;">
-            <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="0"/>
-            <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="80"/>
-            <use href="#wave2-{gid}" fill="url(#liquid-soft-{gid})" x="160"/>
-          </g>
-          <!-- เติมของเหลวด้านล่าง -->
-          <rect y="{base_y+4:.1f}" width="220" height="220" fill="url(#liquid-{gid})"/>
-        </g>
-      </g>
+        {liquid_group}
 
-      <!-- ป้าย max -->
-      <rect x="98" y="24" rx="10" ry="10" width="54" height="22"
-            fill="#ffffff" stroke="#e5e7eb"/>
-      <text x="125" y="40" text-anchor="middle"
-            font-size="12" fill="#374151">{BAG_MAX} max</text>
+        <!-- ป้าย max -->
+        <rect x="98" y="24" rx="10" ry="10" width="54" height="22"
+              fill="#ffffff" stroke="#e5e7eb"/>
+        <text x="125" y="40" text-anchor="middle"
+              font-size="12" fill="#374151">{BAG_MAX} max</text>
 
-      <!-- ตัวอักษรกรุ๊ปเลือด -->
-      <text x="84" y="126" text-anchor="middle" font-size="32" font-weight="900"
-            style="paint-order: stroke fill"
-            stroke="#111827" stroke-width="4"
-            fill="{letter_fill}">{blood_type}</text>
-    </svg>
+        <!-- ตัวอักษรกรุ๊ปเลือด -->
+        <text x="84" y="126" text-anchor="middle" font-size="32" font-weight="900"
+              style="paint-order: stroke fill"
+              stroke="#111827" stroke-width="4"
+              fill="{letter_fill}">{blood_type}</text>
+      </svg>
+    </div>
+    {chart_html}
   </div>
 </div>
 """
@@ -378,17 +457,56 @@ def expiry_label(days: int | None) -> str:
 def render_minimal_banner(df):
     if df.empty:
         return
-    n_warn = int(((df["_exp_days"].notna()) & (df["_exp_days"] <= 10) & (df["_exp_days"] >= 5)).sum())
-    n_red = int(((df["_exp_days"].notna()) & (df["_exp_days"] <= 4)).sum())
-    n_exp = int(((df["_exp_days"].notna()) & (df["_exp_days"] < 0)).sum())
-    if (n_warn + n_red + n_exp) == 0:
+    # แบ่งตามสี
+    df_days = df["_exp_days"]
+    red_mask = df_days <= 4  # รวมหมดอายุแล้วด้วย
+    yellow_mask = (df_days >= 5) & (df_days <= 10)
+    green_mask = df_days > 10
+
+    n_red = int(red_mask.sum())
+    n_yellow = int(yellow_mask.sum())
+    n_green = int(green_mask.sum())
+
+    if n_red + n_yellow + n_green == 0:
         return
+
     st.markdown(
-        f"""<div id="expiry-banner"><div class="title">
-        ⏰ สถานะวันหมดอายุ — <span class="chip warn">เตือน {n_warn}</span>
-        <span class="chip">วิกฤต {n_red+n_exp}</span></div></div>""",
+        f"""
+        <div id="expiry-banner">
+          <div class="title">
+            ⏰ สถานะวันหมดอายุ (ทุกหน่วยในตาราง)
+            <span class="chip">แดง {n_red}</span>
+            <span class="chip warn">เหลือง {n_yellow}</span>
+            <span class="chip green">เขียว {n_green}</span>
+          </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
+
+# ===== คำนวณ distribution ตามกรุ๊ป ใช้เฉพาะที่ยังไม่หมดอายุ =====
+def non_expired_distribution_by_group():
+    df = st.session_state["entries"]
+    result = {bt: {p: 0 for p in ALL_PRODUCTS_UI} for bt in ["A", "B", "O", "AB"]}
+    if df.empty:
+        return result
+
+    work = df.copy()
+    work["_exp_days"] = work["Exp date"].apply(left_days_safe)
+
+    # เฉพาะที่มีวันหมดอายุ และยังไม่หมดอายุ
+    mask = work["_exp_days"].notna() & (work["_exp_days"] >= 0)
+    # ไม่เอาสถานะจำหน่าย / Exp ออกจากกราฟ
+    mask &= ~work["Status"].isin(["จำหน่าย", "Exp"])
+    work = work[mask]
+
+    for _, r in work.iterrows():
+        bt = str(r.get("Group", "")).strip()
+        comp = str(r.get("Blood Components", "")).strip()
+        if bt in result and comp in result[bt]:
+            result[bt][comp] += 1
+
+    return result
 
 # ============ SIDEBAR ============
 with st.sidebar:
@@ -550,10 +668,14 @@ if st.session_state["page"] == "กรอกเลือด":
                     }
                     df_file = df_file.rename(columns={c: col_map.get(str(c).strip(), c) for c in df_file.columns})
 
+                    # map สถานะจากไฟล์ภาษาอังกฤษ -> สถานะไทยในระบบ
                     status_map_en2th = {
                         "Available": "ว่าง",
+                        "AVAILABLE": "ว่าง",
                         "ReadyToIssue": "จอง",
+                        "Ready to issue": "จอง",
                         "Released": "จำหน่าย",
+                        "RELEASED": "จำหน่าย",
                         "Expired": "Exp",
                         "ReleasedExpired": "Exp",
                         "Out": "จำหน่าย",
@@ -660,6 +782,7 @@ if st.session_state["page"] == "กรอกเลือด":
         df_vis["วันหมดอายุนับถอยหลัง (วัน)"] = df_vis["_exp_days"]
         df_vis["สถานะวันหมดอายุ"] = df_vis["_exp_days"].apply(expiry_label)
 
+        # แบนเนอร์สรุปจำนวน แดง/เหลือง/เขียว
         render_minimal_banner(df_vis)
 
         cols_show = [
@@ -750,12 +873,19 @@ elif st.session_state["page"] == "หน้าหลัก":
     )
 
     totals = totals_overview()
+    # distribution เฉพาะที่ยังไม่หมดอายุ (ใช้ใน tooltip + กราฟด้านล่าง)
+    dist_all = non_expired_distribution_by_group()
+
     blood_types = ["A", "B", "O", "AB"]
     cols = st.columns(4)
     for i, bt in enumerate(blood_types):
         with cols[i]:
             st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
-            st_html(bag_svg(bt, totals.get(bt, 0)), height=270, scrolling=False)
+            st_html(
+                bag_svg(bt, totals.get(bt, 0), dist=dist_all.get(bt), show_chart=True),
+                height=270,
+                scrolling=False,
+            )
             if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
                 st.session_state["selected_bt"] = bt
                 _safe_rerun()
@@ -765,10 +895,16 @@ elif st.session_state["page"] == "หน้าหลัก":
     st.subheader(f"รายละเอียดกรุ๊ป {sel}")
     _L, _M, _R = st.columns([1, 1, 1])
     with _M:
-        st_html(bag_svg(sel, totals.get(sel, 0)), height=270, scrolling=False)
+        st_html(
+            bag_svg(sel, totals.get(sel, 0), dist=dist_all.get(sel), show_chart=True),
+            height=270,
+            scrolling=False,
+        )
 
-    dist_sel = products_of(sel)
-    dist_sel["Cryo"] = get_global_cryo()
+    # ใช้ distribution เฉพาะที่ยังไม่หมดอายุสำหรับกราฟแท่ง
+    dist_sel = dist_all.get(sel, {p: 0 for p in ALL_PRODUCTS_UI})
+    # Cryo เป็น global ถ้าต้องการจะใส่เพิ่มจาก DB ก็ทำได้ แต่ตอนนี้ 0 ถ้าไม่มีข้อมูล
+    # dist_sel["Cryo"] = get_global_cryo()
 
     df = pd.DataFrame([{"product_type": k, "units": int(v)} for k, v in dist_sel.items()])
     df["product_type"] = pd.Categorical(df["product_type"], categories=ALL_PRODUCTS_UI, ordered=True)
