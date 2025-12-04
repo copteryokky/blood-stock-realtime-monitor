@@ -1,4 +1,5 @@
 # app.py
+
 import os
 import time
 from datetime import datetime, date, datetime as dt
@@ -8,138 +9,132 @@ import pandas as pd
 import streamlit as st
 from streamlit.components.v1 import html as st_html
 
-# ===== optional autorefresh (ถ้าไม่มี lib นี้ก็ไม่ error) =====
+# ===== optional autorefresh =====
 try:
     from streamlit_autorefresh import st_autorefresh
-except Exception:  # noqa
+except Exception:  # ถ้าไม่ได้ติดตั้งก็ไม่เป็นไร
     def st_autorefresh(*args, **kwargs):
         return None
 
 # ===== DB funcs =====
 from db import init_db, get_all_status, get_stock_by_blood, adjust_stock, reset_all_stock
 
-
-# -------------------------------------------------------------------
-# CONFIG & GLOBAL CONSTANTS
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# PAGE CONFIG & GLOBAL CSS
+# -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Blood Stock Real-time Monitor",
     page_icon="🩸",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-st.markdown(
-    """
+BASE_CSS = """
 <style>
-/* --------------------------------------------------
-   พื้นหลังหลัก + layout
--------------------------------------------------- */
-[data-testid="stAppViewContainer"] {
-    background: radial-gradient(circle at top left,#ffe4e6 0,#ffffff 40%,#ffffff 100%);
-    font-family: system-ui,-apple-system,"Sarabun","Segoe UI",sans-serif;
-}
-
+/* ปรับ container ให้หายอัดขอบบน */
 .block-container {
-    padding-top: 0.8rem;
+    padding-top: 1.0rem;
     padding-bottom: 3rem;
-    max-width: 1180px;
 }
 
-/* --------------------------------------------------
-   Heading
--------------------------------------------------- */
-h1, h2, h3 {
-    letter-spacing: 0.2px;
+/* ฟอนต์ + heading */
+html, body, [class*="css"] {
+    font-family: "Sarabun", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+h1,h2,h3,h4 {
+    letter-spacing: .2px;
 }
 
-/* --------------------------------------------------
-   Sidebar
--------------------------------------------------- */
+/* พื้นหลังแบบ gradient พาสเทล (ใช้ใน landing + dashboard + entry) */
+.stApp {
+    background: radial-gradient(circle at top left, #ffe2e6 0%, #fff7f7 35%, #ffffff 100%);
+}
+
+/* Sidebar สไตล์คล้ายของเดิม */
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg,#020617,#020617 30%,#020617 100%);
-    color: #e5e7eb;
+    background: #020617;
 }
 [data-testid="stSidebar"] .sidebar-title {
-    color:#e5e7eb;
-    font-weight:800;
-    font-size:1.06rem;
-    margin: 6px 0 14px 4px;
+    color: #e5e7eb;
+    font-weight: 800;
+    font-size: 1.06rem;
+    margin: 6px 0 10px 4px;
 }
 [data-testid="stSidebar"] .stButton>button {
-    width:100%;
-    border-radius:999px;
-    border:1px solid transparent;
-    padding:0.55rem 0.9rem;
-    font-weight:600;
-    background:#020617;
-    color:#e5e7eb;
-    box-shadow:0 0 0 1px rgba(148,27,37,.45);
+    width: 100%;
+    border-radius: 999px;
+    padding: 0.55rem 0.9rem;
+    font-weight: 600;
+    border: 1px solid #e11d48;
+    color: #e5e7eb;
+    background: transparent;
 }
 [data-testid="stSidebar"] .stButton>button:hover {
-    background:#111827;
+    background: #e11d48;
+    color: #ffffff;
 }
-[data-testid="stSidebar"] .stButton>button:focus {
-    outline:2px solid #fb7185;
+[data-testid="stSidebar"] .stButton>button[data-selected="true"] {
+    background: #f97373;
+    color: #111827;
 }
 
-/* --------------------------------------------------
-   legend badge
--------------------------------------------------- */
-.badge{
+/* ปุ่ม logout มุมขวาบน */
+.topbar-logout {
+    position: fixed;
+    right: 2.5rem;
+    top: 0.9rem;
+    z-index: 50;
+}
+.topbar-logout button {
+    border-radius: 999px;
+    padding: 0.45rem 1.4rem;
+    font-weight: 600;
+}
+
+/* badge legend (ใช้ใน dashboard) */
+.badge {
     display:inline-flex;
     align-items:center;
     gap:.4rem;
-    padding:.25rem .55rem;
+    padding:.25rem .5rem;
     border-radius:999px;
     background:#f3f4f6;
-    font-size:0.83rem;
 }
-.legend-dot{
+.legend-dot {
     width:.7rem;
     height:.7rem;
     border-radius:999px;
     display:inline-block;
 }
 
-/* --------------------------------------------------
-   Flash message
--------------------------------------------------- */
-.flash{
-    position:fixed;
-    top:86px;
-    right:24px;
-    z-index:9999;
-    color:#fff;
-    padding:.75rem 1rem;
-    border-radius:12px;
-    font-weight:800;
-    box-shadow:0 10px 24px rgba(0,0,0,.18);
+/* DataFrame */
+[data-testid="stDataFrame"] table {
+    font-size: 14px;
 }
-.flash.success{background:#16a34a;}
-.flash.info{background:#0ea5e9;}
-.flash.warning{background:#f97316;}
-.flash.error{background:#ef4444;}
+[data-testid="stDataFrame"] th {
+    font-size: 14px;
+    font-weight: 700;
+    color: #111827;
+}
 
-/* --------------------------------------------------
-   Sticky expiry banner
--------------------------------------------------- */
-#expiry-banner{
-    position:sticky;
-    top:0;
-    z-index:1000;
-    border-radius:14px;
-    margin:6px 0 12px 0;
-    padding:12px 14px;
-    border:2px solid #991b1b;
-    background:linear-gradient(180deg,#fee2e2,#ffffff);
-    box-shadow:0 10px 24px rgba(153,27,27,.12);
+/* Sticky minimal banner (expiry summary) */
+#expiry-banner {
+    position: sticky;
+    top: 0;
+    z-index: 7;
+    border-radius: 14px;
+    margin: 6px 0 12px 0;
+    padding: 12px 14px;
+    border: 2px solid #991b1b;
+    background: linear-gradient(180deg,#fee2e2,#ffffff);
+    box-shadow: 0 10px 24px rgba(153,27,27,.12);
 }
-#expiry-banner .title{
-    font-weight:900;
-    font-size:1.02rem;
-    color:#7f1d1d;
+#expiry-banner .title {
+    font-weight: 900;
+    font-size: 1.02rem;
+    color: #7f1d1d;
 }
-#expiry-banner .chip{
+#expiry-banner .chip {
     display:inline-flex;
     align-items:center;
     gap:.35rem;
@@ -150,221 +145,220 @@ h1, h2, h3 {
     color:#fff;
     margin-left:.5rem;
 }
-#expiry-banner .chip.warn{background:#f59e0b;}
+#expiry-banner .chip.warn {
+    background:#f59e0b;
+}
 
-/* --------------------------------------------------
-   Landing hero (หน้าแรกแบบการ์ดใหญ่)
--------------------------------------------------- */
-.landing-shell{
-    margin-top:1.5rem;
+/* Flash message */
+.flash {
+    position: fixed;
+    top: 96px;
+    right: 24px;
+    z-index: 9999;
+    color: #fff;
+    padding: .7rem 1rem;
+    border-radius: 12px;
+    font-weight: 800;
+    box-shadow: 0 10px 24px rgba(0,0,0,.18);
 }
-.landing-card-main{
-    background:linear-gradient(135deg,#fff1f2,#ffffff);
-    border-radius:28px;
-    box-shadow:0 24px 45px rgba(248,113,113,.22);
-    padding:26px 30px 26px 30px;
-    display:grid;
-    grid-template-columns: minmax(0,3fr) minmax(0,2.6fr);
-    gap:16px;
-    border:1px solid #fecaca;
+.flash.success {background:#16a34a;}
+.flash.info    {background:#0ea5e9;}
+.flash.warning {background:#f59e0b;}
+.flash.error   {background:#ef4444;}
+
+/* ---------------- Landing page styles ---------------- */
+.landing-header {
+    margin-top: 0.5rem;
+    margin-bottom: 1.2rem;
 }
-.landing-hero-tag{
+.landing-subtitle {
+    font-size: 0.9rem;
+    color: #6b7280;
+}
+
+.landing-hero {
+    border-radius: 28px;
+    padding: 1.8rem 2.2rem;
+    background: radial-gradient(circle at top left, #ffe4e6 0%, #fff7f7 55%, #ffffff 100%);
+    box-shadow: 0 18px 55px rgba(248,113,113,.35);
+    border: 1px solid rgba(248,113,113,.25);
+}
+.landing-pill {
     display:inline-flex;
     align-items:center;
     gap:.4rem;
+    padding:.2rem .7rem;
+    font-size:.78rem;
+    border-radius:999px;
     background:#fee2e2;
     color:#b91c1c;
     font-weight:700;
-    font-size:.82rem;
-    padding:.3rem .9rem;
-    border-radius:999px;
 }
-.landing-hero-title{
-    margin-top:.7rem;
-    font-size:1.7rem;
-    font-weight:800;
-    color:#111827;
+.landing-title {
+    font-size: 1.55rem;
+    font-weight: 800;
+    margin-top: .75rem;
+    margin-bottom: .25rem;
 }
-.landing-hero-sub{
-    margin-top:.35rem;
-    font-size:.95rem;
+.landing-sub {
+    font-size: .95rem;
+    color:#4b5563;
+    margin-bottom: .8rem;
+}
+.landing-list {
+    font-size: .9rem;
     color:#374151;
 }
-.landing-hero-list{
-    margin-top:.4rem;
-    font-size:.9rem;
-    color:#374151;
+.landing-list li {
+    margin-bottom: .15rem;
 }
-.landing-hero-list li{
-    margin:0.12rem 0;
-}
-.landing-hero-list li::marker{
-    color:#fb7185;
-}
-
-/* ปุ่มในหน้า landing */
-.landing-hero-buttons{
-    margin-top:1rem;
+.landing-btn-row {
+    margin-top: 1.1rem;
     display:flex;
     flex-wrap:wrap;
-    gap:.75rem;
+    gap:.7rem;
 }
-.landing-btn-primary{
-    border-radius:999px;
-    background:#fb3748;
-    color:#ffffff;
-    border:none;
-    padding:.55rem 1.6rem;
-    font-weight:700;
-    font-size:.9rem;
-    box-shadow:0 14px 28px rgba(248,113,113,.55);
+.landing-btn-primary {
+    border-radius: 999px;
+    background: #ef4444;
+    color: #ffffff;
+    font-weight: 700;
+    padding: .55rem 1.4rem;
+    border: none;
+    font-size: .9rem;
 }
-.landing-btn-ghost{
-    border-radius:999px;
-    background:#ffffff;
-    color:#111827;
-    border:1px solid #fecaca;
-    padding:.55rem 1.4rem;
-    font-weight:600;
-    font-size:.9rem;
-}
-
-/* Illustration */
-.landing-hero-illu-wrap{
-    position:relative;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-}
-.landing-hero-illu{
-    width:220px;
-    height:170px;
-    border-radius:26px;
-    background:radial-gradient(circle at top,#fee2e2 0,#fecaca 40%,#f97373 90%);
-    box-shadow:0 20px 40px rgba(248,113,113,.45);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-}
-.landing-hero-illu-inner{
-    width:140px;
-    height:90px;
-    border-radius:18px;
-    background:#ffffff;
-    box-shadow:0 10px 25px rgba(15,23,42,.22);
-    padding:12px;
-}
-.landing-hero-illu-graph{
-    width:100%;
-    height:40px;
-    border-radius:999px;
-    background:linear-gradient(90deg,#fee2e2,#fecaca);
-    margin-bottom:10px;
-}
-.landing-hero-illu-bags{
-    display:flex;
-    justify-content:flex-end;
-    gap:8px;
-}
-.landing-hero-illu-bag{
-    width:28px;
-    height:48px;
-    border-radius:12px;
-    background:#fb3748;
-    box-shadow:0 8px 18px rgba(185,28,28,.5);
+.landing-btn-secondary {
+    border-radius: 999px;
+    border: 1px dashed #9ca3af;
+    background: #ffffff;
+    color: #4b5563;
+    font-weight: 600;
+    padding: .55rem 1.4rem;
+    font-size: .85rem;
 }
 
-/* card ด้านล่าง 2 ใบ */
-.landing-row{
-    margin-top:1.8rem;
-    display:grid;
-    grid-template-columns: minmax(0,1fr) minmax(0,1fr);
-    gap:18px;
+/* info cards */
+.landing-grid {
+    margin-top: 1.6rem;
 }
-.landing-card{
+.landing-card {
     background:#ffffff;
-    border-radius:20px;
+    border-radius: 22px;
+    padding:1.4rem 1.6rem;
+    box-shadow: 0 18px 40px rgba(15,23,42,.06);
     border:1px solid #e5e7eb;
-    box-shadow:0 14px 35px rgba(15,23,42,.04);
-    padding:18px 20px 20px 20px;
-    font-size:.9rem;
 }
-.landing-card h3{
-    font-size:1rem;
-    margin-bottom:.45rem;
+.landing-card h3 {
+    font-size: 1.02rem;
+    margin-bottom: .5rem;
 }
 
-/* การ์ด 'จัดการระบบ' */
-.system-card{
-    margin-top:1.8rem;
+/* ระบบจัดการระบบ card */
+.landing-system {
+    margin-top: 1.7rem;
+    border-radius: 22px;
+    padding:1rem 1.4rem;
     background:#eff6ff;
-    border-radius:18px;
     border:1px solid #bfdbfe;
-    padding:14px 18px;
-    font-size:.9rem;
+    color:#1e3a8a;
+    font-size:.88rem;
 }
 
-/* --------------------------------------------------
-   Login layout (โหมดเข้าสู่ระบบ)
--------------------------------------------------- */
-.login-root {
-    min-height: 92vh;
+/* login tip badge */
+.login-tip {
+    display:flex;
+    align-items:center;
+    gap:.4rem;
+    font-size:.8rem;
+    color:#6b7280;
+}
+
+
+/* ---------------- Login page styles ---------------- */
+.login-bg .stApp {
+    background:#020617 !important;
+}
+.login-main {
+    min-height: 100vh;
     display:flex;
     align-items:center;
     justify-content:center;
 }
-.login-card {
-    width: 360px;
-    max-width: 92vw;
-    background:#ffffff;
-    border-radius:26px;
-    padding:26px 26px 24px 26px;
-    box-shadow:0 24px 60px rgba(15,23,42,.55);
-    border:1px solid rgba(148,27,37,.35);
-}
-.login-title{
-    font-size:1.3rem;
+.login-title {
+    text-align:center;
+    font-size:1.6rem;
     font-weight:800;
     margin-bottom:.15rem;
 }
-.login-sub{
-    font-size:.85rem;
+.login-subtitle {
+    text-align:center;
+    font-size:.9rem;
     color:#6b7280;
-    margin-bottom:1.1rem;
-}
-.login-hint{
-    font-size:.8rem;
-    color:#6b7280;
-    margin-top:.3rem;
+    margin-bottom:1.3rem;
 }
 
-/* ปุ่ม login */
-.login-btn > button{
+/* แปลง st.form ให้กลายเป็น card กลางจอ */
+.login-card [data-testid="stForm"] {
+    background:#f9fafb;
+    padding:1.8rem 2.3rem 2.0rem 2.3rem;
+    border-radius:26px;
+    box-shadow:0 24px 60px rgba(15,23,42,.9);
+    border:1px solid rgba(148,163,184,.6);
+}
+.login-card label {
+    font-weight:600;
+    font-size:.9rem;
+}
+.login-card .stTextInput>div>div>input {
+    border-radius:999px;
+}
+.login-card .stPassword>div>div>input {
+    border-radius:999px;
+}
+.login-card .stButton>button {
+    border-radius:999px;
     width:100%;
-    border-radius:999px !important;
-    background:#fb3748 !important;
-    color:#ffffff !important;
-    border:none !important;
-    font-weight:700 !important;
-    box-shadow:0 16px 35px rgba(248,113,113,.6);
+    font-weight:700;
 }
-.login-btn > button:hover{
-    filter:brightness(1.03);
+.login-card .primary-login button {
+    background:#ef4444;
+    border-color:#ef4444;
+}
+.login-card .primary-login button:hover {
+    background:#dc2626;
+    border-color:#dc2626;
+}
+.login-card .back-home button {
+    margin-top:.4rem;
+    background:#ffffff;
+    color:#374151;
+    border-color:#e5e7eb;
+}
+.login-card .back-home button:hover {
+    background:#f3f4f6;
 }
 
-/* DataFrame font */
-[data-testid="stDataFrame"] table {font-size:14px;}
-[data-testid="stDataFrame"] th {
-    font-size:14px;
-    font-weight:700;
-    color:#111827;
+/* icon วงกลมด้านบนในการ login (โชว์ง่าย ๆ) */
+.login-icon {
+    width:44px;
+    height:44px;
+    border-radius:999px;
+    background:#ef4444;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#fff;
+    font-size:1.3rem;
+    margin:0 auto 0.8rem auto;
+    box-shadow:0 10px 25px rgba(248,113,113,.5);
 }
 </style>
-""",
-    unsafe_allow_html=True,
-)
+"""
+st.markdown(BASE_CSS, unsafe_allow_html=True)
 
-# --- business config ---
+# -----------------------------------------------------------------------------
+# CONFIG & CONSTANTS
+# -----------------------------------------------------------------------------
 BAG_MAX = 20
 CRITICAL_MAX = 4
 YELLOW_MAX = 15
@@ -372,7 +366,12 @@ AUTH_PASSWORD = "1234"
 FLASH_SECONDS = 2.5
 
 RENAME_TO_UI = {"Plasma": "FFP", "Platelets": "PC"}
-UI_TO_DB = {"LPRC": "LPRC", "PRC": "PRC", "FFP": "Plasma", "PC": "Platelets"}
+UI_TO_DB = {
+    "LPRC": "LPRC",
+    "PRC": "PRC",
+    "FFP": "Plasma",
+    "PC": "Platelets",
+}
 ALL_PRODUCTS_UI = ["LPRC", "PRC", "FFP", "Cryo", "PC"]
 
 ENTRY_COLS = [
@@ -395,14 +394,13 @@ STATUS_COLOR = {
     "หลุดจอง": "🔵 หลุดจอง",
 }
 
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # STATE
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def _init_state():
     st.session_state.setdefault("logged_in", False)
     st.session_state.setdefault("username", "")
-    # หน้าเริ่มต้นให้มา Landing (หน้าหลัก)
-    st.session_state.setdefault("page", "หน้าหลัก")
+    st.session_state.setdefault("page", "landing")  # เริ่มต้นหน้า landing
     st.session_state.setdefault("selected_bt", None)
     st.session_state.setdefault("flash", None)
     st.session_state.setdefault("last_upload_token", None)
@@ -421,13 +419,13 @@ def _init_state():
 
 _init_state()
 
-# -------------------------------------------------------------------
-# HELPER ฟังก์ชันทั่วไป
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# HELPER FUNCTIONS (flash, compute, svg, expiry, db util)
+# -----------------------------------------------------------------------------
 def _safe_rerun():
     try:
         st.rerun()
-    except Exception:  # streamlit เก่าบาง version
+    except Exception:
         st.experimental_rerun()
 
 
@@ -490,7 +488,6 @@ def get_global_cryo():
     return total
 
 
-# ===== SVG: ถุงเลือด =====
 def bag_svg(blood_type: str, total: int) -> str:
     status, _label, pct = compute_bag(total, BAG_MAX)
     fill = bag_color(status)
@@ -510,6 +507,7 @@ def bag_svg(blood_type: str, total: int) -> str:
     base_y = 20.0
     amp1 = 5 + 6 * (pct / 100.0)
     amp2 = amp1 * 0.6
+
     wave1_d = (
         f"M0 {base_y:.1f} "
         f"Q20 {base_y-amp1:.1f} 40 {base_y:.1f} "
@@ -525,6 +523,7 @@ def bag_svg(blood_type: str, total: int) -> str:
 
     wave_speed1 = 5.0
     wave_speed2 = 7.5
+
     if total <= 0:
         water_y = inner_y0 + inner_h - 1
 
@@ -563,17 +562,14 @@ def bag_svg(blood_type: str, total: int) -> str:
         <path id="wave2-{gid}" d="{wave2_d}" />
       </defs>
 
-      <!-- หูถุง -->
       <circle cx="84" cy="10" r="7.5"
               fill="#eef2ff" stroke="#dbe0ea" stroke-width="3"/>
       <rect x="77.5" y="14" width="13" height="8" rx="3" fill="#e5e7eb"/>
 
-      <!-- ตัวถุง -->
       <path d="M16,34 C16,18 32,8 52,8 L116,8 C136,8 152,18 152,34
                L152,176 C152,195 136,206 116,206 L52,206 C32,206 16,195 16,176 Z"
             fill="#ffffff" stroke="#800000" stroke-width="3"/>
 
-      <!-- ของเหลว + คลื่น -->
       <g clip-path="url(#clip-{gid})">
         <g transform="translate(24,{water_y:.1f})">
           <g class="wave-layer" style="animation:wave-move-1 {wave_speed1}s linear infinite;">
@@ -590,13 +586,11 @@ def bag_svg(blood_type: str, total: int) -> str:
         </g>
       </g>
 
-      <!-- ป้าย max -->
       <rect x="98" y="24" rx="10" ry="10" width="54" height="22"
             fill="#ffffff" stroke="#e5e7eb"/>
       <text x="125" y="40" text-anchor="middle"
             font-size="12" fill="#374151">{BAG_MAX} max</text>
 
-      <!-- ตัวอักษรกำกับกรุ๊ป -->
       <text x="84" y="126" text-anchor="middle" font-size="32" font-weight="900"
             style="paint-order: stroke fill"
             stroke="#111827" stroke-width="4"
@@ -607,9 +601,11 @@ def bag_svg(blood_type: str, total: int) -> str:
 """
 
 
-# -------------------------------------------------------------------
-# DB UTIL
-# -------------------------------------------------------------------
+# ===== DB util =====
+if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
+    init_db()
+
+
 def totals_overview():
     ov = get_all_status()
     return {d["blood_type"]: int(d.get("total", 0)) for d in ov}
@@ -662,9 +658,7 @@ def auto_update_booking_to_release():
         st.session_state["entries"] = df
 
 
-# -------------------------------------------------------------------
-# Expiry util
-# -------------------------------------------------------------------
+# ===== Expiry util =====
 def left_days_safe(d):
     try:
         if pd.isna(d):
@@ -709,186 +703,205 @@ def render_minimal_banner(df):
         return
     st.markdown(
         f"""<div id="expiry-banner"><div class="title">
-        ⏰ สถานะวันหมดอายุ —
+        ⏰ สถานะวันหมดอายุ — 
         <span class="chip warn">เตือน {n_warn}</span>
         <span class="chip">วิกฤต {n_red+n_exp}</span></div></div>""",
         unsafe_allow_html=True,
     )
 
-
-# -------------------------------------------------------------------
-# หน้า Landing (สำหรับคนยังไม่ล็อกอิน)
-# -------------------------------------------------------------------
-def render_landing_public():
+# -----------------------------------------------------------------------------
+# PAGE RENDER FUNCTIONS
+# -----------------------------------------------------------------------------
+def render_landing_page():
+    """หน้าแรก (Landing) แบบภาพตัวอย่าง"""
     st.markdown(
         f"""
-<div class="landing-shell">
-  <div class="landing-card-main">
-    <div>
-      <div class="landing-hero-tag">
-        <span>🩸 Blood Stock Real-time Monitor</span>
-        <span style="font-weight:500;">สำหรับธนาคารเลือด / ห้อง Lab</span>
-      </div>
-      <div class="landing-hero-title">
-        แดชบอร์ดคลังเลือดแบบ Real-time
-      </div>
-      <div class="landing-hero-sub">
-        ช่วยดูปริมาณสำรองและวันหมดอายุแบบอัปเดตทันที ใช้สำหรับทีมธนาคารเลือดและห้อง Lab ในโรงพยาบาล
-      </div>
-      <ul class="landing-hero-list">
-        <li>ดูปริมาณคลังเลือดรวมและแยกตามกรุ๊ปและผลิตภัณฑ์ (LPRC, PRC, FFP, PC)</li>
-        <li>รองรับนำเข้าไฟล์ Excel / CSV จาก LIS หรือระบบเดิมของคุณ</li>
-        <li>แจ้งเตือน Critical / Warning ช่วยให้เห็นเคสเร่งด่วนก่อนหมดอายุ</li>
-      </ul>
-      <div class="landing-hero-buttons">
-        <button class="landing-btn-primary">เข้าสู่ระบบแดชบอร์ด</button>
-        <button class="landing-btn-ghost">สำหรับทีม Audit / QA</button>
-      </div>
-    </div>
-    <div class="landing-hero-illu-wrap">
-      <div class="landing-hero-illu">
-        <div class="landing-hero-illu-inner">
-          <div class="landing-hero-illu-graph"></div>
-          <div class="landing-hero-illu-bags">
-            <div class="landing-hero-illu-bag"></div>
-            <div class="landing-hero-illu-bag"></div>
-            <div class="landing-hero-illu-bag" style="opacity:.85;"></div>
-          </div>
+        <div class="landing-header">
+            <h1>Blood Stock Real-time Monitor</h1>
+            <div class="landing-subtitle">
+                อัปเดตล่าสุด: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
+            </div>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="landing-row">
-    <div class="landing-card">
-      <h3>ภาพรวมคลังเลือดในแต่ละหมู่</h3>
-      <p style="font-size:.82rem;color:#6b7280;margin-bottom:.4rem;">
-        แสดงภาพรวมสถานะคลังเลือด A / B / O / AB ในมุมมองเดียว
-      </p>
-      <ul style="list-style:none;padding-left:0;font-size:.85rem;">
-        <li style="margin:.15rem 0;">✅ เพียงพอ – ปริมาณคลังเลือดยังอยู่ในช่วงปลอดภัย</li>
-        <li style="margin:.15rem 0;">🟠 ใกล้หมด – ควรเตรียมสั่งเพิ่ม หรือวางแผนการใช้</li>
-        <li style="margin:.15rem 0;">🔴 น้อยมาก – เสี่ยงขาดสต็อก ต้องเฝ้าระวังเป็นพิเศษ</li>
-      </ul>
-    </div>
-    <div class="landing-card">
-      <h3>ระดับแจ้งเตือนวันหมดอายุ</h3>
-      <p style="font-size:.82rem;color:#6b7280;margin-bottom:.4rem;">
-        ช่วยมองเห็นถุงเลือดที่กำลังจะหมดอายุล่วงหน้า ลดการทิ้งและบริหารแผนการใช้เลือด
-      </p>
-      <ul style="list-style:none;padding-left:0;font-size:.85rem;">
-        <li style="margin:.18rem 0;">
-          <span style="color:#dc2626;font-weight:700;">Critical</span>
-          <span style="margin-left:.3rem;">เหลือวันหมดอายุน้อยมาก ควรใช้ให้หมดโดยด่วน</span>
-        </li>
-        <li style="margin:.18rem 0;">
-          <span style="color:#f97316;font-weight:700;">Warning</span>
-          <span style="margin-left:.3rem;">เหลือเวลาอีกไม่กี่วัน เหมาะสำหรับการใช้ก่อนล็อตใหม่</span>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <div class="system-card">
-    <strong>⚙️ จัดการระบบ</strong> — ต้องเข้าสู่ระบบก่อนจึงจะเข้าหน้ากรอกเลือดและแดชบอร์ดจริงได้
-  </div>
-</div>
-""",
+        """,
         unsafe_allow_html=True,
     )
 
-    # ปุ่ม Streamlit จริง ๆ สำหรับเปลี่ยนหน้าไป Login
-    st.write("")  # spacing
-    col1, col2, _ = st.columns([1, 1, 2])
-    with col1:
-        if st.button("🔐 เข้าสู่ระบบเพื่อใช้งานจริง", use_container_width=True):
-            st.session_state["page"] = "เข้าสู่ระบบ"
-            _safe_rerun()
-    with col2:
-        st.caption("Tip: ใช้รหัสผ่านทดลอง 1234 เพื่อทดลองระบบ")
+    col_main = st.columns([1, 1])[0]
 
-
-# -------------------------------------------------------------------
-# หน้า LOGIN (กล่องอยู่กลางจอ)
-# -------------------------------------------------------------------
-def render_login_page():
-    st.markdown(
-        """
-<style>
-/* override พื้นหลังให้มืดนิดหน่อย */
-[data-testid="stAppViewContainer"]{
-    background: radial-gradient(circle at top,#020617 0,#020617 25%,#020617 40%,#020617 100%);
-}
-</style>
-""",
-        unsafe_allow_html=True,
-    )
-
-    st.markdown('<div class="login-root">', unsafe_allow_html=True)
-    with st.container():
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
+    with col_main:
         st.markdown(
             """
-<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.4rem;">
-  <div style="width:32px;height:32px;border-radius:999px;background:#fb3748;
-              display:flex;align-items:center;justify-content:center;color:white;
-              box-shadow:0 0 0 3px rgba(248,113,113,.35);">
-    🩸
-  </div>
-  <div style="font-weight:700;font-size:.9rem;color:#6b7280;">Blood Stock Real-time Monitor</div>
-</div>
-<div class="login-title">เข้าสู่ระบบคลังเลือด</div>
-<div class="login-sub">สำหรับเจ้าหน้าที่ธนาคารเลือด / ห้อง Lab ที่ต้องการบันทึกและติดตามคลังเลือดแบบ Real-time</div>
-""",
+            <div class="landing-hero">
+              <div class="landing-pill">
+                <span>🩸 Blood Stock Real-time Monitor</span>
+                <span style="color:#6b7280;">สำหรับธนาคารเลือด / ห้อง Lab</span>
+              </div>
+              <div class="landing-title">
+                แดชบอร์ดคลังเลือดแบบ Real-time<br/>ช่วยดูปริมาณสำรองและวันหมดอายุได้ทันที
+              </div>
+              <div class="landing-sub">
+                ระบบออกแบบมาสำหรับธนาคารเลือดของโรงพยาบาล ช่วยติดตามสถานะคลังเลือดและผลิตภัณฑ์เลือดแบบอัปเดตทันที
+              </div>
+              <ul class="landing-list">
+                <li>✓ ดูปริมาณคลังเลือดและส่วนผสมแบบแยกชนิดแบบทันที (LPRC, PRC, FFP, PC)</li>
+                <li>✓ รองรับนำเข้าไฟล์ Excel / CSV จาก LIS หรือระบบเดิมของคุณ</li>
+                <li>✓ แสดงเตือน Critical / Warning ช่วยให้จัดการการใช้เลือดอย่างเหมาะสม</li>
+              </ul>
+              <div class="landing-btn-row">
+                <button class="landing-btn-primary" disabled>
+                  เข้าสู่ระบบแดชบอร์ด
+                </button>
+                <button class="landing-btn-secondary" disabled>
+                  สำหรับทีม Audit / QA
+                </button>
+              </div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
-        with st.form("login_form_main"):
-            username = st.text_input("ชื่อผู้ใช้ (Username)", value="", placeholder="เช่น bloodbank01 หรือชื่อของคุณ")
-            password = st.text_input("รหัสผ่าน (Password)", value="", type="password", placeholder="ทดลองใช้: 1234")
-            st.markdown(
-                '<div class="login-hint">แนะนำให้ใช้รหัสผ่านที่ได้รับจากหน่วยงานเท่านั้น • เวอร์ชันทดลองให้ใช้รหัสผ่าน 1234 เพื่อเข้าสู่ระบบ</div>',
-                unsafe_allow_html=True,
-            )
-            st.write("")
-            submit = st.form_submit_button("เข้าสู่ระบบ", use_container_width=True)
+    # ปุ่มจริง (ใช้ streamlit) ให้อยู่ใต้ hero -> เปลี่ยน page = login
+    st.write("")
+    col1, col2, col3 = st.columns([1.2, 1, 1.2])
+    with col2:
+        if st.button("เข้าสู่ระบบแดชบอร์ด", use_container_width=True):
+            st.session_state["page"] = "login"
+            _safe_rerun()
 
-        st.markdown('<div class="login-btn"></div>', unsafe_allow_html=True)
+    # การ์ดตัวอย่างด้านล่าง 2 ใบ
+    st.markdown('<div class="landing-grid">', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
 
-        if submit:
+    with c1:
+        st.markdown(
+            """
+            <div class="landing-card">
+              <h3>ภาพรวมคลังเลือดในแต่ละหมู่</h3>
+              <p style="font-size:.85rem;color:#6b7280;margin-bottom:.45rem;">
+                ภาพรวมสถานะคลังเลือด A / B / O / AB ให้เห็นได้ในมุมมองเดียว
+              </p>
+              <ul style="list-style:none;padding-left:0;font-size:.85rem;">
+                <li>🟢 <b>เพียงพอ</b> – ปริมาณเลือดอยู่ในช่วงปลอดภัย</li>
+                <li>🟠 <b>ใกล้หมด</b> – ควรเตรียมสั่งเพิ่ม หรือวางแผนการใช้</li>
+                <li>🔴 <b>น้อยมาก</b> – เสี่ยงขาดเลือด ต้องเฝ้าระวังเป็นพิเศษ</li>
+              </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c2:
+        st.markdown(
+            """
+            <div class="landing-card">
+              <h3>ระดับแจ้งเตือนวันหมดอายุ</h3>
+              <p style="font-size:.85rem;color:#6b7280;margin-bottom:.45rem;">
+                ช่วยมองเห็นถุงเลือดที่กำลังจะหมดอายุล่วงหน้า ลดการทิ้งและปรับแผนการใช้เลือดได้ง่าย
+              </p>
+              <ul style="list-style:none;padding-left:0;font-size:.85rem;">
+                <li><span style="color:#dc2626;font-weight:700;">Critical</span> &nbsp;– เหลือวันหมดอายุน้อยมาก ควรใช้ให้หมดโดยด่วน</li>
+                <li><span style="color:#f97316;font-weight:700;">Warning</span> – เหลือเวลามากกว่าเล็กน้อย เหมาะสำหรับหมุนเวียนเลือดใหม่</li>
+              </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # การ์ด "จัดการระบบ"
+    st.markdown(
+        """
+        <div class="landing-system">
+          <b>⚙️ จัดการระบบ</b><br/>
+          ต้องเข้าสู่ระบบคลังเลือดจริงก่อน จึงจะสามารถบันทึกข้อมูลคลังเลือด นำเข้าไฟล์ หรือรีเซ็ตจำนวนหน่วยได้
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # tip เล็ก ๆ ด้านล่าง
+    st.write("")
+    st.markdown(
+        """
+        <div class="login-tip">
+          <span>💡</span>
+          <span>เวอร์ชันทดลองใช้รหัสผ่าน <b>1234</b> เพื่อเข้าสู่ระบบแดชบอร์ด</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_login_page():
+    """หน้า Login แบบเต็มจอ (พื้นหลังมืด กล่องขาวกลางจอ)"""
+
+    # override background เป็นโหมด login
+    st.markdown('<style>.stApp{background:#020617 !important;}</style>', unsafe_allow_html=True)
+
+    show_flash()  # เผื่อมี flash error จากรอบก่อน
+
+    st.markdown('<div class="login-main">', unsafe_allow_html=True)
+    col_left, col_center, col_right = st.columns([1, 1.2, 1])
+
+    with col_center:
+        st.markdown('<div class="login-card">', unsafe_allow_html=True)
+
+        st.markdown('<div class="login-icon">+</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-title">เข้าสู่ระบบคลังเลือด</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="login-subtitle">สำหรับเจ้าหน้าที่ธนาคารเลือด / ห้อง Lab ที่ต้องการบันทึกและติดตามคลังเลือดแบบ Real-time</div>',
+            unsafe_allow_html=True,
+        )
+
+        with st.form("login_form_main", clear_on_submit=False):
+            username = st.text_input("ชื่อผู้ใช้ (Username)", placeholder="เช่น thalab01 หรือชื่อย่อของคุณ")
+            password = st.text_input("รหัสผ่าน (Password)", type="password", placeholder="ทดลองใช้: 1234")
+            st.caption("แนะนำให้ใช้รหัสผ่านที่ได้รับจากหน่วยงานเท่านั้น – เวอร์ชันทดลองใช้รหัสผ่าน 1234 เพื่อเข้าสู่ระบบ")
+            submitted = st.form_submit_button("เข้าสู่ระบบ")
+
+        col_btn1, col_btn2 = st.columns([1.1, 1])
+        with col_btn1:
+            primary_clicked = st.button("เข้าสู่ระบบ", key="login_btn_dup", help="กดปุ่มนี้เพื่อเข้าสู่แดชบอร์ดจริง")
+        with col_btn2:
+            back_clicked = st.button("⬅ กลับไปหน้าแรก", key="login_back_btn")
+
+        # logic กดปุ่ม (ทั้ง submit form หรือปุ่มซ้ำด้านล่าง)
+        do_login = submitted or primary_clicked
+
+        if do_login:
             if password == AUTH_PASSWORD:
                 st.session_state["logged_in"] = True
-                st.session_state["username"] = username.strip() or "staff"
-                st.session_state["page"] = "หน้าหลัก"
+                st.session_state["username"] = (username or "").strip() or "staff"
+                st.session_state["page"] = "dashboard"
                 flash("เข้าสู่ระบบสำเร็จ ✅", "success")
                 _safe_rerun()
             else:
-                st.error("รหัสผ่านไม่ถูกต้อง — กรุณาลองใหม่ (สำหรับทดสอบใช้ 1234)")
+                flash("รหัสผ่านไม่ถูกต้อง (password = 1234)", "error")
+                _safe_rerun()
 
-        st.markdown(
-            """
-<div style="margin-top:1.1rem;font-size:.78rem;color:#9ca3af;text-align:center;">
-หากใช้เครื่องสาธารณะ เมื่อใช้งานเสร็จแล้ว กรุณากดออกจากระบบเพื่อความปลอดภัยของข้อมูล
-</div>
-""",
-            unsafe_allow_html=True,
-        )
+        if back_clicked:
+            st.session_state["page"] = "landing"
+            _safe_rerun()
+
         st.markdown("</div>", unsafe_allow_html=True)
+
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-# -------------------------------------------------------------------
-# หน้า กรอกเลือด (เหมือนเดิม + แก้บัค)
-# -------------------------------------------------------------------
 def render_entry_page():
+    """หน้า กรอกเลือด (ต้องล็อกอินก่อน)"""
+
+    st.title("กรอกข้อมูลคลังเลือด (Entry)")
+    st.caption("บันทึกและนำเข้าข้อมูลถุงเลือด อัปเดตเข้าฐานข้อมูลแบบ Real-time")
+
+    show_flash()
+
     if not st.session_state["logged_in"]:
         st.warning("ต้องเข้าสู่ระบบก่อนจึงจะใช้งานเมนูนี้ได้")
-        if st.button("ไปยังหน้าล็อกอิน", type="primary"):
-            st.session_state["page"] = "เข้าสู่ระบบ"
-            _safe_rerun()
         return
 
-    st.subheader("กรอกเลือดเข้าระบบ (บันทึกทีละรายการ)")
+    st.subheader("กรอกเลือดทีละรายการ")
 
     with st.form("blood_entry_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
@@ -941,9 +954,8 @@ def render_entry_page():
             st.error(f"ปรับคลังไม่สำเร็จ: {e}")
         _safe_rerun()
 
-    # ----------------- นำเข้าไฟล์ -----------------
+    # นำเข้าไฟล์ Excel / CSV
     st.markdown("### 📁 นำเข้าจาก Excel/CSV (อัปโหลดแล้วลงตารางอัตโนมัติ)")
-
     up = st.file_uploader("เลือกไฟล์ (.xlsx, .xls, .csv)", type=["xlsx", "xls", "csv"], key="uploader_file")
     mode_merge = st.radio(
         "โหมดนำเข้า",
@@ -955,10 +967,9 @@ def render_entry_page():
 
     if up is not None:
         token = (up.name, up.size)
-        if st.session_state.get("last_upload_token") == token:
-            st.info("ไฟล์นี้ถูกนำเข้าแล้วในการรันรอบนี้")
-        else:
+        if st.session_state.get("last_upload_token") != token:
             st.session_state["last_upload_token"] = token
+
             try:
                 if up.name.lower().endswith(".csv"):
                     df_file = pd.read_csv(up)
@@ -1008,27 +1019,13 @@ def render_entry_page():
                             lambda s: status_map_en2th.get(str(s).strip(), str(s).strip())
                         )
 
-                    for c in [
-                        "created_at",
-                        "Exp date",
-                        "Unit number",
-                        "Group",
-                        "Blood Components",
-                        "Status",
-                        "บันทึก",
-                    ]:
+                    for c in ["created_at", "Exp date", "Unit number", "Group",
+                              "Blood Components", "Status", "บันทึก"]:
                         if c not in df_file.columns:
                             df_file[c] = ""
                     df_file = df_file[
-                        [
-                            "created_at",
-                            "Exp date",
-                            "Unit number",
-                            "Group",
-                            "Blood Components",
-                            "Status",
-                            "บันทึก",
-                        ]
+                        ["created_at", "Exp date", "Unit number", "Group",
+                         "Blood Components", "Status", "บันทึก"]
                     ].copy()
 
                     df_file["สถานะ(สี)"] = df_file["Status"].map(
@@ -1051,7 +1048,9 @@ def render_entry_page():
                         nt = str(r["บันทึก"]).strip()
 
                         row_dict = {
-                            "created_at": str(r["created_at"] or datetime.now().strftime("%Y/%m/%d")),
+                            "created_at": str(
+                                r["created_at"] or datetime.now().strftime("%Y/%m/%d")
+                            ),
                             "Exp date": str(r["Exp date"] or ""),
                             "Unit number": str(r["Unit number"] or ""),
                             "Group": g,
@@ -1099,10 +1098,10 @@ def render_entry_page():
             except Exception as e:
                 st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
 
-    # ----------------- ตารางสรุปแก้ไขได้ -----------------
+    # ตารางสรุป (แก้ไขได้)
     st.markdown("### ตารางสรุป (แก้ไขได้)")
-
     df_vis = st.session_state["entries"].copy(deep=True)
+
     parsed = pd.to_datetime(df_vis["Exp date"], errors="coerce")
     df_vis["Exp date"] = parsed.dt.date
 
@@ -1134,7 +1133,7 @@ def render_entry_page():
         "วันหมดอายุนับถอยหลัง (วัน)": st.column_config.NumberColumn(
             "วันหมดอายุนับถอยหลัง (วัน)", disabled=True
         ),
-        "สถานะวันหมดอายุ": st.column_config.TextColumn("สถานะวันหมดอายุ", disabled=True),
+        "สถานะวันหมดอายุ": st.column_config.TextColumn("ค่าสถานะ (สี)", disabled=True),
         "Unit number": st.column_config.TextColumn("Unit number"),
         "Group": st.column_config.SelectboxColumn("Group", options=["A", "B", "O", "AB"]),
         "Blood Components": st.column_config.SelectboxColumn(
@@ -1180,15 +1179,19 @@ def render_entry_page():
         _safe_rerun()
 
 
-# -------------------------------------------------------------------
-# หน้า Dashboard หลัก (หลังล็อกอิน)
-# -------------------------------------------------------------------
 def render_dashboard_page():
-    if not st.session_state["logged_in"]:
-        render_landing_public()
-        return
+    """หน้าแดชบอร์ด (แสดงถุงเลือด, กราฟ, activity log)"""
 
     auto_update_booking_to_release()
+
+    st.title("แดชบอร์ดคลังเลือด")
+    st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+
+    show_flash()
+
+    if not st.session_state["logged_in"]:
+        st.warning("ต้องเข้าสู่ระบบก่อนจึงจะใช้งานแดชบอร์ดนี้ได้")
+        return
 
     c1, c2, _ = st.columns(3)
     c1.markdown(
@@ -1202,7 +1205,6 @@ def render_dashboard_page():
 
     totals = totals_overview()
     blood_types = ["A", "B", "O", "AB"]
-
     cols = st.columns(4)
     for i, bt in enumerate(blood_types):
         with cols[i]:
@@ -1233,6 +1235,7 @@ def render_dashboard_page():
         return "#22c55e"
 
     df["color"] = df["units"].apply(color_for)
+
     df_chart = df[df["units"] > 0].copy()
     ymax = max(10, int(df_chart["units"].max() * 1.25)) if not df_chart.empty else 10
 
@@ -1271,70 +1274,97 @@ def render_dashboard_page():
         st.info("ยังไม่มีรายการความเคลื่อนไหว")
 
 
-# -------------------------------------------------------------------
-# INIT DB
-# -------------------------------------------------------------------
-if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
-    init_db()
-else:
-    # เผื่อกรณี schema ยังไม่ครบ
-    init_db()
-
-# -------------------------------------------------------------------
-# SIDEBAR เมนูหลัก
-# -------------------------------------------------------------------
-with st.sidebar:
-    st.markdown('<div class="sidebar-title">เมนู</div>', unsafe_allow_html=True)
-
-    if st.button("หน้าหลัก", use_container_width=True):
-        st.session_state["page"] = "หน้าหลัก"
-        _safe_rerun()
-    if st.button("กรอกเลือด", use_container_width=True):
-        st.session_state["page"] = "กรอกเลือด"
-        _safe_rerun()
-    if st.session_state["logged_in"]:
-        if st.button("ออกจากระบบ", use_container_width=True):
-            st.session_state["logged_in"] = False
-            st.session_state["username"] = ""
-            st.session_state["page"] = "หน้าหลัก"
-            flash("ออกจากระบบแล้ว", "info")
+def render_reset_section():
+    """ส่วนจัดการระบบด้านล่าง (รีเซ็ตสต็อก)"""
+    st.divider()
+    st.markdown("### ⚠️ จัดการระบบ")
+    if st.session_state.get("logged_in"):
+        if st.button("🧹 รีเซ็ตเลือดทั้งหมดเป็นศูนย์", type="primary", use_container_width=True):
+            reset_all_stock(st.session_state.get("username", "admin"))
+            flash("รีเซ็ตจำนวนเลือดทั้งหมดแล้ว ✅", "warning")
             _safe_rerun()
     else:
-        if st.button("เข้าสู่ระบบ", use_container_width=True):
-            st.session_state["page"] = "เข้าสู่ระบบ"
-            _safe_rerun()
+        st.info("ต้องเข้าสู่ระบบก่อนจึงจะใช้งานปุ่มรีเซ็ตได้")
 
-# -------------------------------------------------------------------
-# HEADER + ROUTER
-# -------------------------------------------------------------------
-st.title("Blood Stock Real-time Monitor")
-st.caption(f"อัปเดตล่าสุด: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-show_flash()
+# -----------------------------------------------------------------------------
+# SIDEBAR NAV
+# -----------------------------------------------------------------------------
+def render_sidebar():
+    with st.sidebar:
+        st.markdown('<div class="sidebar-title">เมนู</div>', unsafe_allow_html=True)
 
-current_page = st.session_state.get("page", "หน้าหลัก")
+        def nav_button(label, target_page):
+            selected = st.session_state.get("page") == target_page
+            if st.button(label, key=f"nav_{target_page}", use_container_width=True):
+                st.session_state["page"] = target_page
+                _safe_rerun()
+            # mark selected ใน DOM
+            st.markdown(
+                f"""<script>
+                const btns = window.parent.document.querySelectorAll('button[kind="secondary"]');
+                btns.forEach(b => {{
+                    if (b.innerText.trim() === "{label}") {{
+                        b.dataset.selected = "{str(selected).lower()}";
+                    }}
+                }});
+                </script>""",
+                unsafe_allow_html=True,
+            )
 
-if current_page == "หน้าหลัก":
-    # ถ้าล็อกอินแล้ว -> Dashboard จริง / ถ้ายังไม่ล็อกอิน -> Landing สวย ๆ
-    if st.session_state["logged_in"]:
+        nav_button("หน้าแรก", "landing")
+        nav_button("แดชบอร์ดคลังเลือด", "dashboard")
+        nav_button("กรอกเลือด", "entry")
+
+        st.write("")
+        if st.session_state.get("logged_in"):
+            if st.button("ออกจากระบบ", key="nav_logout", use_container_width=True):
+                st.session_state["logged_in"] = False
+                st.session_state["username"] = ""
+                st.session_state["page"] = "landing"
+                flash("ออกจากระบบเรียบร้อยแล้ว ✅", "info")
+                _safe_rerun()
+        else:
+            if st.button("เข้าสู่ระบบ", key="nav_login", use_container_width=True):
+                st.session_state["page"] = "login"
+                _safe_rerun()
+
+# -----------------------------------------------------------------------------
+# MAIN
+# -----------------------------------------------------------------------------
+def main():
+    render_sidebar()
+
+    # ปุ่ม logout มุมขวาบน (เฉพาะเมื่อ login อยู่) บนหน้า landing / dashboard / entry
+    if st.session_state.get("logged_in") and st.session_state.get("page") != "login":
+        with st.container():
+            st.markdown(
+                '<div class="topbar-logout">',
+                unsafe_allow_html=True,
+            )
+            if st.button("ออกจากระบบแล้ว", key="top_logout"):
+                st.session_state["logged_in"] = False
+                st.session_state["username"] = ""
+                st.session_state["page"] = "landing"
+                flash("ออกจากระบบเรียบร้อยแล้ว ✅", "info")
+                _safe_rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    page = st.session_state.get("page", "landing")
+
+    if page == "landing":
+        render_landing_page()
+    elif page == "login":
+        render_login_page()
+    elif page == "entry":
+        render_entry_page()
+        render_reset_section()
+    elif page == "dashboard":
         render_dashboard_page()
+        render_reset_section()
     else:
-        render_landing_public()
-
-elif current_page == "กรอกเลือด":
-    render_entry_page()
-
-elif current_page == "เข้าสู่ระบบ":
-    render_login_page()
-
-# -------------------------------------------------------------------
-# ปุ่มรีเซ็ตสต็อก (แสดงทุกหน้า แต่ต้องล็อกอิน)
-# -------------------------------------------------------------------
-st.divider()
-st.markdown("### ⚠️ จัดการระบบ")
-if st.session_state.get("logged_in"):
-    if st.button("🧹 รีเซ็ตเลือดทั้งหมดเป็นศูนย์", type="primary", use_container_width=True):
-        reset_all_stock(st.session_state.get("username", "admin"))
-        flash("รีเซ็ตจำนวนเลือดทั้งหมดแล้ว ✅", "warning")
+        st.session_state["page"] = "landing"
         _safe_rerun()
-else:
-    st.info("ต้องเข้าสู่ระบบก่อนจึงจะใช้งานปุ่มรีเซ็ตได้")
+
+
+if __name__ == "__main__":
+    main()
