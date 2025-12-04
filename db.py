@@ -1,152 +1,172 @@
+# db.py
 import os
 import sqlite3
-from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime
 
-# ===============================
-# 🔧 CONFIG
-# ===============================
 DB_PATH = os.environ.get("BLOOD_DB_PATH", "blood.db")
 
-# ===============================
-# 📦 การเชื่อมต่อฐานข้อมูล
-# ===============================
-def get_conn():
+
+def _get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
-# ===============================
-# 🏗️ สร้างฐานข้อมูลเริ่มต้น (init จาก schema.sql)
-# ===============================
+
 def init_db():
-    with closing(get_conn()) as conn, open("schema.sql", "r", encoding="utf-8") as f:
-        conn.executescript(f.read())
-        conn.commit()
+    """สร้างตารางพื้นฐาน ถ้ายังไม่มี"""
+    conn = _get_conn()
+    cur = conn.cursor()
 
-# ===============================
-# 🩸 ดึงสถานะของเลือดแต่ละกรุ๊ป
-# ===============================
-def get_status_for_blood(blood_type: str):
-    with closing(get_conn()) as conn:
-        cur = conn.execute("""
-            SELECT t.blood_type,
-                   COALESCE(SUM(s.units),0) AS total,
-                   t.critical_min, t.low_min
-              FROM thresholds t
-              LEFT JOIN stock s ON s.blood_type = t.blood_type
-             WHERE t.blood_type = ?
-          GROUP BY t.blood_type
-        """, (blood_type,))
-        row = cur.fetchone()
-        if not row:
-            return {"blood_type": blood_type, "total": 0, "status": "unknown"}
+    # ตารางสต็อกเลือด (เก็บเป็นยอดรวมตามกรุ๊ป / product_type)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stock (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            blood_type TEXT NOT NULL,
+            product_type TEXT NOT NULL,
+            units INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(blood_type, product_type)
+        )
+        """
+    )
 
-        total = row["total"]
-        if total < row["critical_min"]:
-            status = "critical"
-        elif total < row["low_min"]:
-            status = "low"
-        else:
-            status = "ok"
+    # ตาราง log การเปลี่ยนแปลง (ไม่จำเป็นต่อหน้าจอ แต่เก็บไว้เป็น history)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stock_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            actor TEXT,
+            blood_type TEXT,
+            product_type TEXT,
+            delta INTEGER,
+            note TEXT
+        )
+        """
+    )
 
-        return {
-            "blood_type": blood_type,
-            "total": total,
-            "status": status,
-            "critical_min": row["critical_min"],
-            "low_min": row["low_min"]
-        }
+    conn.commit()
+    conn.close()
 
-# ===============================
-# 🩸 ดึงข้อมูลทุกกรุ๊ปเลือด
-# ===============================
+
+# ------------ Query helper ------------
+
 def get_all_status():
-    return [get_status_for_blood(bt) for bt in ["O", "A", "B", "AB"]]
+    """
+    คืนค่า list ของ dict:
+    { "blood_type": "A", "total": 10 }
+    รวมทุก product_type ต่อกรุ๊ป
+    """
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT blood_type, COALESCE(SUM(units),0) AS total
+        FROM stock
+        GROUP BY blood_type
+        """
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
 
-# ===============================
-# 🩸 ดึงข้อมูล stock รายกรุ๊ป
-# ===============================
+
 def get_stock_by_blood(blood_type: str):
-    with closing(get_conn()) as conn:
-        cur = conn.execute("""
-            SELECT product_type, units
-              FROM stock
-             WHERE blood_type = ?
-             ORDER BY product_type
-        """, (blood_type,))
-        return [dict(row) for row in cur.fetchall()]
+    """
+    คืน list ของ dict:
+    { "product_type": "LPRC", "units": 5 }
+    """
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT product_type, units
+        FROM stock
+        WHERE blood_type = ?
+        """,
+        (blood_type,),
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
 
-# ===============================
-# 🔄 ปรับจำนวน stock (เพิ่ม/ลด)
-# ===============================
-def adjust_stock(blood_type: str, product_type: str, qty_change: int,
-                 actor: str = "system", note: str = ""):
-    with closing(get_conn()) as conn:
-        # ถ้ายังไม่มีแถวนี้ ให้เพิ่มใหม่
-        conn.execute("""
-        INSERT INTO stock (blood_type, product_type, units)
+
+def adjust_stock(blood_type: str, product_type: str, qty: int, actor: str = "", note: str = ""):
+    """
+    ปรับสต็อก + เพิ่ม log
+    qty > 0 = รับเข้า, qty < 0 = จ่ายออก
+    """
+    if not qty:
+        return
+
+    conn = _get_conn()
+    cur = conn.cursor()
+
+    # ถ้าไม่มี row ให้สร้างก่อน
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO stock(blood_type, product_type, units)
         VALUES (?, ?, 0)
-        ON CONFLICT(blood_type, product_type) DO NOTHING
-        """, (blood_type, product_type))
+        """,
+        (blood_type, product_type),
+    )
 
-        # อัปเดตจำนวน
-        conn.execute("""
+    # อัปเดตจำนวน
+    cur.execute(
+        """
         UPDATE stock
-           SET units = MAX(0, units + ?)
-         WHERE blood_type = ? AND product_type = ?
-        """, (qty_change, blood_type, product_type))
+        SET units = MAX(units + ?, 0)
+        WHERE blood_type = ? AND product_type = ?
+        """,
+        (qty, blood_type, product_type),
+    )
 
-        # บันทึก transaction
-        conn.execute("""
-        INSERT INTO transactions (ts, actor, blood_type, product_type, qty_change, note)
+    # บันทึก log
+    cur.execute(
+        """
+        INSERT INTO stock_log(ts, actor, blood_type, product_type, delta, note)
         VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            datetime.now(timezone.utc).isoformat(),
-            actor,
+        """,
+        (
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            actor or "",
             blood_type,
             product_type,
-            qty_change,
-            note
-        ))
+            int(qty),
+            note or "",
+        ),
+    )
 
-        conn.commit()
+    conn.commit()
+    conn.close()
 
-# ===============================
-# 📜 ดึงประวัติการเปลี่ยนแปลง
-# ===============================
-def get_transactions(limit: int = 50, blood_type: str | None = None):
-    with closing(get_conn()) as conn:
-        if blood_type:
-            cur = conn.execute("""
-            SELECT *
-              FROM transactions
-             WHERE blood_type = ?
-             ORDER BY id DESC
-             LIMIT ?
-            """, (blood_type, limit))
-        else:
-            cur = conn.execute("""
-            SELECT *
-              FROM transactions
-             ORDER BY id DESC
-             LIMIT ?
-            """, (limit,))
-        return [dict(r) for r in cur.fetchall()]
 
-# ===============================
-# 🧹 รีเซ็ตสต็อกเลือดทั้งหมดเป็นศูนย์
-# ===============================
 def reset_all_stock(actor: str = "admin"):
-    """รีเซ็ตจำนวนเลือดทั้งหมดให้เป็นศูนย์"""
-    with closing(get_conn()) as conn:
-        # รีเซ็ตทุกแถวใน stock
-        conn.execute("UPDATE stock SET units = 0")
+    """รีเซ็ต stock ทุกตัวเป็นศูนย์ + log"""
+    conn = _get_conn()
+    cur = conn.cursor()
 
-        # เพิ่ม log ลง transactions
-        conn.execute("""
-        INSERT INTO transactions (ts, actor, blood_type, product_type, qty_change, note)
-        VALUES (?, ?, 'ALL', 'ALL', 0, 'RESET STOCK ALL TO ZERO')
-        """, (datetime.now(timezone.utc).isoformat(), actor))
+    # log ก่อนรีเซ็ต (เก็บค่าเดิม)
+    cur.execute("SELECT blood_type, product_type, units FROM stock")
+    rows = cur.fetchall()
+    for r in rows:
+        if r["units"]:
+            cur.execute(
+                """
+                INSERT INTO stock_log(ts, actor, blood_type, product_type, delta, note)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    actor,
+                    r["blood_type"],
+                    r["product_type"],
+                    -int(r["units"]),
+                    "reset_all_stock",
+                ),
+            )
 
-        conn.commit()
+    # set = 0
+    cur.execute("UPDATE stock SET units = 0")
+    conn.commit()
+    conn.close()
