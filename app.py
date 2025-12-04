@@ -22,441 +22,199 @@ from db import init_db, get_all_status, get_stock_by_blood, adjust_stock, reset_
 st.set_page_config(
     page_title="Blood Stock Real-time Monitor",
     page_icon="🩸",
-    layout="wide",
+    layout="wide"
 )
 
 st.markdown(
     """
 <style>
-.block-container{
-    padding-top:1.0rem;
-    max-width:1180px;
-}
-body{
-    background:#fefefe;
-}
+.block-container{padding-top:1.0rem;}
 h1,h2,h3{letter-spacing:.2px}
 
 /* badge legend */
-.badge{
-    display:inline-flex;
-    align-items:center;
-    gap:.4rem;
-    padding:.25rem .5rem;
-    border-radius:999px;
-    background:#f3f4f6
-}
-.legend-dot{
-    width:.7rem;
-    height:.7rem;
-    border-radius:999px;
-    display:inline-block
-}
+.badge{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .5rem;border-radius:999px;background:#f3f4f6}
+.legend-dot{width:.7rem;height:.7rem;border-radius:999px;display:inline-block}
 
 /* Sidebar */
-[data-testid="stSidebar"]{
-    background:#111827;
-}
-[data-testid="stSidebar"] .sidebar-title{
-    color:#e5e7eb;
-    font-weight:800;
-    font-size:1.06rem;
-    margin:6px 0 10px 4px
-}
-[data-testid="stSidebar"] .user-card{
-    display:flex;
-    align-items:center;
-    gap:.8rem;
-    background:linear-gradient(135deg,#1f2937,#111827);
-    border:1px solid #4b5563;
-    border-radius:14px;
-    padding:.75rem .9rem;
-    margin:.5rem .2rem 1rem .2rem;
-    box-shadow:0 8px 22px rgba(0,0,0,.25)
-}
-[data-testid="stSidebar"] .user-avatar{
-    width:40px;
-    height:40px;
-    border-radius:999px;
-    background:#ef4444;
-    color:#fff;
-    font-weight:900;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    letter-spacing:.5px;
-    box-shadow:0 0 0 3px rgba(239,68,68,.25)
-}
-[data-testid="stSidebar"] .user-meta{
-    display:flex;
-    flex-direction:column;
-    line-height:1.1
-}
-[data-testid="stSidebar"] .user-meta .label{
-    font-size:.75rem;
-    color:#cbd5e1
-}
-[data-testid="stSidebar"] .user-meta .name{
-    font-size:1rem;
-    color:#fff;
-    font-weight:800
-}
-[data-testid="stSidebar"] .stButton>button{
-    width:100%;
-    background:#ffffff;
-    color:#111827;
-    border:1px solid #cbd5e1;
-    border-radius:12px;
-    font-weight:700;
-    justify-content:flex-start
-}
-[data-testid="stSidebar"] .stButton>button:hover{
-    background:#f3f4f6
-}
+[data-testid="stSidebar"]{background:#2e343a;}
+[data-testid="stSidebar"] .sidebar-title{color:#e5e7eb;font-weight:800;font-size:1.06rem;margin:6px 0 10px 4px}
+[data-testid="stSidebar"] .user-card{display:flex;align-items:center;gap:.8rem;background:linear-gradient(135deg,#39424a,#2f343a);border:1px solid #475569;border-radius:14px;padding:.75rem .9rem;margin:.5rem .2rem 1rem .2rem;box-shadow:0 8px 22px rgba(0,0,0,.25)}
+[data-testid="stSidebar"] .user-avatar{width:40px;height:40px;border-radius:999px;background:#ef4444;color:#fff;font-weight:900;display:flex;align-items:center;justify-content:center;letter-spacing:.5px;box-shadow:0 0 0 3px rgba(239,68,68,.25)}
+[data-testid="stSidebar"] .user-meta{display:flex;flex-direction:column;line-height:1.1}
+[data-testid="stSidebar"] .user-meta .label{font-size:.75rem;color:#cbd5e1}
+[data-testid="stSidebar"] .user-meta .name{font-size:1rem;color:#fff;font-weight:800}
+[data-testid="stSidebar"] .stButton>button{width:100%;background:#ffffff;color:#111827;border:1px solid #cbd5e1;border-radius:12px;font-weight:700;justify-content:flex-start}
+[data-testid="stSidebar"] .stButton>button:hover{background:#f3f4f6}
 
 /* DataFrame */
 [data-testid="stDataFrame"] table {font-size:14px;}
-[data-testid="stDataFrame"] th {
-    font-size:14px;
-    font-weight:700;
-    color:#111827;
-}
+[data-testid="stDataFrame"] th {font-size:14px; font-weight:700; color:#111827;}
 
 /* Sticky minimal banner */
-#expiry-banner{
-    position:sticky;
-    top:0;
-    z-index:1000;
-    border-radius:14px;
-    margin:6px 0 12px 0;
-    padding:12px 14px;
-    border:2px solid #991b1b;
-    background:linear-gradient(180deg,#fee2e2,#ffffff);
-    box-shadow:0 10px 24px rgba(153,27,27,.12)
-}
-#expiry-banner .title{
-    font-weight:900;
-    font-size:1.02rem;
-    color:#7f1d1d
-}
-#expiry-banner .chip{
-    display:inline-flex;
-    align-items:center;
-    gap:.35rem;
-    padding:.2rem .55rem;
-    border-radius:999px;
-    font-weight:800;
-    background:#ef4444;
-    color:#fff;
-    margin-left:.5rem
-}
+#expiry-banner{position:sticky;top:0;z-index:1000;border-radius:14px;margin:6px 0 12px 0;padding:12px 14px;border:2px solid #991b1b;background:linear-gradient(180deg,#fee2e2,#ffffff);box-shadow:0 10px 24px rgba(153,27,27,.12)}
+#expiry-banner .title{font-weight:900;font-size:1.02rem;color:#7f1d1d}
+#expiry-banner .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .55rem;border-radius:999px;font-weight:800;background:#ef4444;color:#fff;margin-left:.5rem}
 #expiry-banner .chip.warn{background:#f59e0b}
 
 /* Flash */
-.flash{
-    position:fixed;
-    top:110px;
-    right:24px;
-    z-index:9999;
-    color:#fff;
-    padding:.7rem 1rem;
-    border-radius:12px;
-    font-weight:800;
-    box-shadow:0 10px 24px rgba(0,0,0,.18)
-}
+.flash{position:fixed; top:110px; right:24px; z-index:9999; color:#fff; padding:.7rem 1rem; border-radius:12px; font-weight:800; box-shadow:0 10px 24px rgba(0,0,0,.18)}
 .flash.success{background:#16a34a}
 .flash.info{background:#0ea5e9}
 .flash.warning{background:#f59e0b}
 .flash.error{background:#ef4444}
 
-/* ===========================
-   Landing page (ก่อนล็อกอิน)
-   =========================== */
-.landing-card-outer{
-    background:#ffffff;
-    border-radius:18px;
-    padding:1.2rem 1.6rem 1.4rem;
-    margin-top:.6rem;
-    box-shadow:0 22px 45px rgba(15,23,42,.06);
-    border:1px solid #f3f4f6;
-}
-.landing-header-left{
+/* ========== Landing / Hero ========== */
+.hero-wrap{margin-top:1.0rem;margin-bottom:2.0rem;}
+.hero-card{
+    background:radial-gradient(circle at 0% 0%,#fee2e2 0,#ffffff 55%,#e0f2fe 100%);
+    border-radius:22px;
+    padding:24px 28px;
+    box-shadow:0 18px 42px rgba(15,23,42,.08);
+    border:1px solid #e5e7eb;
     display:flex;
-    align-items:center;
-    gap:.6rem;
+    gap:32px;
+    align-items:stretch;
 }
-.landing-header-icon{
-    width:30px;
-    height:30px;
+.hero-left{flex:1.25;display:flex;flex-direction:column;gap:.4rem;}
+.hero-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:.4rem;
+    padding:4px 10px;
     border-radius:999px;
     background:#fee2e2;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:16px;
-}
-.landing-header-title{
-    font-size:1.05rem;
+    color:#b91c1c;
+    font-size:.78rem;
     font-weight:700;
-    color:#111827;
 }
-.landing-header-updated{
-    text-align:right;
-    font-size:.86rem;
-    color:#6b7280;
-    margin-top:.3rem;
+.hero-title{font-size:1.6rem;font-weight:800;color:#111827;margin-top:.15rem;}
+.hero-sub{font-size:.95rem;color:#4b5563;margin-top:.1rem;}
+.hero-list{margin:.6rem 0 0 0;padding-left:0;list-style:none;font-size:.9rem;color:#111827;}
+.hero-list li{margin-bottom:.18rem;display:flex;gap:.4rem;align-items:flex-start;}
+.hero-list li span.icon{margin-top:.16rem;}
+.hero-tagline{font-size:.78rem;color:#6b7280;margin-top:.6rem;}
+.hero-right{flex:1;display:flex;align-items:center;justify-content:center;}
+.hero-illus{
+    width:250px;
+    max-width:100%;
+    border-radius:20px;
+    background:linear-gradient(160deg,#f97373 0,#b91c1c 60%,#7f1d1d 100%);
+    box-shadow:0 22px 40px rgba(185,28,28,.55);
+    padding:18px 18px 14px 18px;
+    color:#fee2e2;
+    font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial;
 }
-.landing-hero-inner{
-    display:flex;
-    gap:2.0rem;
-    align-items:stretch;
-    margin-top:1.0rem;
-    padding:1.3rem 1.4rem 1.5rem;
-    border-radius:16px;
-    background:linear-gradient(90deg,#fff1f2,#fff7ed);
+.hero-illus-title{font-weight:800;font-size:.92rem;margin-bottom:.3rem;}
+.hero-illus-chart{
+    height:90px;
+    border-radius:14px;
+    background:rgba(248,250,252,.18);
+    margin-top:.6rem;
     position:relative;
     overflow:hidden;
 }
-.hero-left-block{
-    flex:1.6;
-    z-index:1;
-}
-.hero-main-title{
-    font-size:1.6rem;
-    font-weight:800;
-    color:#111827;
-    margin:0 0 .3rem;
-}
-.hero-main-sub{
-    font-size:1rem;
-    font-weight:500;
-    color:#374151;
-    margin-bottom:.9rem;
-}
-.hero-bullets{
-    list-style:none;
-    padding:0;
-    margin:0;
-    font-size:.9rem;
-    color:#4b5563;
-}
-.hero-bullets li{
-    display:flex;
-    gap:.45rem;
-    margin-bottom:.25rem;
-}
-.hero-bullets li span.icon{
-    font-size:.85rem;
-    margin-top:.1rem;
-}
-.hero-cta-row{
-    margin-top:1.2rem;
-}
-.hero-cta-row .hero-btn-primary [data-testid="stButton"]>button{
+.hero-illus-line{position:absolute;left:6px;right:6px;top:16px;height:40px;
+    background:linear-gradient(90deg,rgba(248,250,252,.1),rgba(248,250,252,.8),rgba(248,250,252,.12));
     border-radius:999px;
-    padding:.7rem 1.6rem;
-    font-weight:700;
-    font-size:.95rem;
-    background:#ef4444;
-    border:1px solid #ef4444;
-    color:#ffffff;
-    box-shadow:0 14px 30px rgba(248,113,113,.55);
 }
-.hero-cta-row .hero-btn-primary [data-testid="stButton"]>button:hover{
-    background:#dc2626;
-    border-color:#dc2626;
-    transform:translateY(-1px);
-}
-.hero-cta-row .hero-btn-secondary [data-testid="stButton"]>button{
-    border-radius:999px;
-    padding:.7rem 1.6rem;
-    font-weight:600;
-    font-size:.95rem;
-    background:#ffffff;
-    border:1px solid #e5e7eb;
-    color:#111827;
-    box-shadow:0 10px 24px rgba(148,163,184,.18);
-}
-.hero-cta-row .hero-btn-secondary [data-testid="stButton"]>button:hover{
-    border-color:#fecaca;
-    transform:translateY(-1px);
-}
-.landing-hero-footer{
-    text-align:right;
-    font-size:.8rem;
-    color:#9ca3af;
-    margin-top:.5rem;
-}
-
-/* Illustration ขวามือ */
-.hero-right-block{
+.hero-illus-bags{margin-top:.75rem;display:flex;gap:.5rem;}
+.hero-illus-bag{
     flex:1;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-}
-.hero-illust{
-    position:relative;
-    width:230px;
-    height:180px;
-    border-radius:28px;
-    background:linear-gradient(145deg,#fee2e2,#fecaca);
-    box-shadow:0 20px 45px rgba(248,113,113,.55);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-}
-.hero-illust-inner{
-    width:78%;
-    height:72%;
-    border-radius:20px;
-    background:#ffffff;
-    box-shadow:0 10px 26px rgba(148,163,184,.55);
-    position:relative;
-    padding:.8rem .9rem;
-}
-.hero-chart-line{
-    position:absolute;
-    left:14px;
-    right:14px;
-    top:52%;
-    height:2px;
-    background:linear-gradient(90deg,#fecaca,#fb7185);
-}
-.hero-chart-line::before{
-    content:"";
-    position:absolute;
-    left:8%;
-    top:-14px;
-    width:40%;
-    height:2px;
-    border-top:3px solid #fb7185;
-    border-radius:999px;
-}
-.hero-chart-line::after{
-    content:"";
-    position:absolute;
-    left:48%;
-    top:-5px;
-    width:35%;
-    height:2px;
-    border-top:3px solid #b91c1c;
-    border-radius:999px;
-}
-.hero-bag{
-    position:absolute;
-    width:44px;
-    height:72px;
-    border-radius:18px;
-    background:#ef4444;
-    box-shadow:0 12px 24px rgba(185,28,28,.7);
-}
-.hero-bag::before{
-    content:"";
-    position:absolute;
-    inset:4px;
-    border-radius:15px;
     background:#fee2e2;
+    border-radius:14px;
+    padding:6px 8px;
+    color:#b91c1c;
+    font-size:.78rem;
+    font-weight:700;
+    display:flex;
+    flex-direction:column;
+    gap:2px;
 }
-.hero-bag::after{
-    content:"";
-    position:absolute;
-    left:50%;
-    transform:translateX(-50%);
-    bottom:10px;
-    width:14px;
-    height:20px;
+
+/* CTA under hero */
+.hero-cta-wrap{margin-top:1.4rem;margin-bottom:1.6rem;text-align:center;}
+.hero-cta-note{font-size:.8rem;color:#6b7280;margin-top:.25rem;}
+.hero-cta-wrap .stButton>button{
+    background:#ef4444;
+    color:#fff;
+    font-weight:700;
+    border-radius:999px;
+    padding:.45rem 2.4rem;
+    border:none;
+    box-shadow:0 14px 30px rgba(239,68,68,.45);
+}
+
+/* Info cards */
+.info-row{margin-top:.4rem;margin-bottom:2.0rem;}
+.info-card{
+    border-radius:18px;
+    border:1px solid #e5e7eb;
+    background:#ffffff;
+    padding:18px 20px;
+    box-shadow:0 10px 25px rgba(15,23,42,.04);
+}
+.info-card-title{font-size:1.0rem;font-weight:800;margin-bottom:.4rem;color:#111827;}
+.info-card-sub{font-size:.8rem;color:#6b7280;margin-bottom:.65rem;}
+.info-chip{font-size:.82rem;font-weight:700;}
+.info-chip span{margin-right:.3rem;}
+.info-bullets{font-size:.85rem;color:#374151;margin-top:.25rem;}
+.info-bullets div{margin-bottom:.16rem;}
+
+/* Login card */
+.login-card{
+    margin-top:1.8rem;
+    margin-bottom:1.6rem;
+    border-radius:22px;
+    background:linear-gradient(135deg,#991b1b 0,#7f1d1d 40%,#ffffff 40%,#ffffff 100%);
+    box-shadow:0 22px 45px rgba(15,23,42,.18);
+    border:1px solid #e5e7eb;
+    padding:0;
+}
+.login-inner{display:flex;gap:0;min-height:220px;}
+.login-left{
+    flex:1.05;
+    padding:24px 26px;
+    color:#fee2e2;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+}
+.login-left h3{font-size:1.2rem;margin-bottom:.4rem;}
+.login-left p{font-size:.9rem;margin-bottom:.4rem;}
+.login-left ul{font-size:.85rem;padding-left:1.1rem;margin:0;}
+.login-left ul li{margin-bottom:.18rem;}
+.login-badge{font-size:.78rem;margin-top:.4rem;color:#fecaca;}
+
+.login-right{
+    flex:1;
+    padding:24px 26px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+}
+.login-right h3{font-size:1.15rem;font-weight:800;margin-bottom:.2rem;color:#111827;}
+.login-right p{font-size:.85rem;color:#6b7280;margin-bottom:.7rem;}
+.login-footnote{font-size:.78rem;color:#9ca3af;margin-top:.4rem;}
+
+.login-right [data-testid="stForm"]{
+    background:transparent;
+}
+.login-right [data-testid="stForm"] > div{
+    padding:0;
+}
+.login-right .stButton>button{
+    width:100%;
     border-radius:999px;
     background:#ef4444;
-}
-.hero-bag-left{
-    right:82px;
-    bottom:-18px;
-}
-.hero-bag-right{
-    right:26px;
-    bottom:4px;
+    color:#fff;
+    font-weight:700;
+    border:none;
 }
 
-/* bottom cards */
-.landing-bottom-grid{
-    display:grid;
-    grid-template-columns:repeat(2,minmax(0,1fr));
-    gap:1.1rem;
-    margin-top:1.6rem;
-}
-.landing-bottom-card{
-    background:#ffffff;
-    border-radius:18px;
-    border:1px solid #f3f4f6;
-    box-shadow:0 14px 32px rgba(148,163,184,.12);
-    padding:1.0rem 1.3rem 1.1rem;
-}
-.landing-bottom-title{
-    font-size:1.05rem;
-    font-weight:700;
-    color:#111827;
-    margin-bottom:.55rem;
-}
-.landing-bottom-sub{
-    font-size:.9rem;
-    color:#4b5563;
-    margin-bottom:.6rem;
-}
-.blood-overview-line{
-    font-size:.92rem;
-    font-weight:600;
-    margin-bottom:.3rem;
-}
-.blood-overview-tags .tag{
-    display:flex;
-    align-items:center;
-    gap:.35rem;
-    font-size:.86rem;
-    color:#4b5563;
-    margin-bottom:.15rem;
-}
-.tag-dot{
-    width:9px;
-    height:9px;
-    border-radius:999px;
-    display:inline-block;
-}
-.tag-dot.green{background:#22c55e;}
-.tag-dot.amber{background:#f59e0b;}
-.tag-dot.red{background:#ef4444;}
-
-.landing-alert-row{
-    display:flex;
-    gap:.5rem;
-    align-items:flex-start;
-    font-size:.88rem;
-    margin-bottom:.3rem;
-}
-.alert-label{
-    min-width:70px;
-    font-weight:700;
-}
-.alert-label.critical{color:#dc2626;}
-.alert-label.warning{color:#f97316;}
-.alert-text{color:#4b5563;}
-
-/* การ์ดจัดการระบบ */
-.system-manage-card{
-    margin-top:1.8rem;
-    background:#eff6ff;
-    border-radius:16px;
-    border:1px solid #dbeafe;
-    padding:1rem 1.2rem 1.2rem;
-}
-.system-manage-title{
-    font-weight:700;
-    margin-bottom:.4rem;
-    font-size:1.02rem;
-}
-.system-manage-card [data-testid="stButton"]>button{
-    border-radius:999px;
-    font-weight:700;
+/* Responsive */
+@media (max-width: 900px){
+  .hero-card{flex-direction:column;}
+  .login-inner{flex-direction:column;}
 }
 </style>
 """,
@@ -491,7 +249,7 @@ ENTRY_COLS = [
     "บันทึก",
 ]
 
-# สถานะหลัก (แก้จาก "จำหน่าย" เป็น "จ่ายแล้ว")
+# สถานะหลัก
 STATUS_OPTIONS = ["ว่าง", "จอง", "จ่ายแล้ว", "Exp", "หลุดจอง"]
 STATUS_COLOR = {
     "ว่าง": "🟢 ว่าง",
@@ -507,7 +265,6 @@ STATUS_COLOR = {
 def _init_state():
     st.session_state.setdefault("logged_in", False)
     st.session_state.setdefault("username", "")
-    # ให้หน้าแรกเป็น "หน้าหลัก" = landing page
     st.session_state.setdefault("page", "หน้าหลัก")
     st.session_state.setdefault("selected_bt", None)
     st.session_state.setdefault("flash", None)
@@ -523,7 +280,6 @@ def _init_state():
 
     if "activity" not in st.session_state:
         st.session_state["activity"] = []
-
 
 _init_state()
 
@@ -595,7 +351,6 @@ def get_global_cryo():
             if ui != "Cryo":
                 total += int(r.get("units", 0))
     return total
-
 
 # ===== SVG: ถุงเลือด + คลื่นน้ำ 2 ชั้น =====
 def bag_svg(blood_type: str, total: int) -> str:
@@ -719,7 +474,6 @@ def bag_svg(blood_type: str, total: int) -> str:
 </div>
 """
 
-
 # --------------------------------
 # INIT DB
 # --------------------------------
@@ -780,7 +534,6 @@ def auto_update_booking_to_release():
     if updated_any:
         st.session_state["entries"] = df
 
-
 # --------------------------------
 # EXPIRY UTIL
 # --------------------------------
@@ -821,9 +574,7 @@ def expiry_label(days: int | None) -> str:
 def render_minimal_banner(df):
     if df.empty:
         return
-    n_warn = int(
-        ((df["_exp_days"].notna()) & (df["_exp_days"] <= 10) & (df["_exp_days"] >= 5)).sum()
-    )
+    n_warn = int(((df["_exp_days"].notna()) & (df["_exp_days"] <= 10) & (df["_exp_days"] >= 5)).sum())
     n_red = int(((df["_exp_days"].notna()) & (df["_exp_days"] <= 4) & (df["_exp_days"] >= 0)).sum())
     n_exp = int(((df["_exp_days"].notna()) & (df["_exp_days"] < 0)).sum())
     if (n_warn + n_red + n_exp) == 0:
@@ -836,123 +587,177 @@ def render_minimal_banner(df):
         unsafe_allow_html=True,
     )
 
-
-# --------------------------------
-# LANDING PAGE (ก่อนล็อกอิน)
-# --------------------------------
+# ---------- LANDING PAGE (ก่อนล็อกอิน) ----------
 def render_public_landing():
-    now_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-
-    # การ์ดใหญ่ด้านบนเหมือนภาพตัวอย่าง
-    st.markdown('<div class="landing-card-outer">', unsafe_allow_html=True)
-
-    h_left, h_right = st.columns([4, 2])
-    with h_left:
-        st.markdown(
-            """
-            <div class="landing-header-left">
-              <div class="landing-header-icon">🩸</div>
-              <div class="landing-header-title">Blood Stock Real-time Monitor</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with h_right:
-        st.markdown(
-            f'<div class="landing-header-updated">อัปเดตล่าสุด: <strong>{now_str}</strong></div>',
-            unsafe_allow_html=True,
-        )
-
-    # hero ภายใน
-    st.markdown('<div class="landing-hero-inner">', unsafe_allow_html=True)
-    left, right = st.columns([1.9, 1.4])
-
-    with left:
-        st.markdown(
-            """
-            <div class="hero-left-block">
-              <div class="hero-main-title">Blood Stock Real-time Monitor</div>
-              <div class="hero-main-sub">แดชบอร์ดคลังเลือดแบบ Real-time ของโรงพยาบาล</div>
-              <ul class="hero-bullets">
-                <li><span class="icon">✓</span><span>ดูปริมาณคลังเลือดและส่วนผสมแบบอัปเดตทันที</span></li>
-                <li><span class="icon">✓</span><span>รองรับ LPRC, PRC, FFP, PC และ Cryo</span></li>
-                <li><span class="icon">✓</span><span>แจ้งเตือน Critical / Warning ช่วยบริหารการใช้เลือด</span></li>
-              </ul>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.markdown('<div class="hero-cta-row">', unsafe_allow_html=True)
-        cta1, cta2 = st.columns([1, 1])
-        with cta1:
-            st.markdown('<div class="hero-btn-primary">', unsafe_allow_html=True)
-            if st.button("เข้าสู่ระบบแดชบอร์ด", key="hero_login", use_container_width=True):
-                st.session_state["page"] = "เข้าสู่ระบบ"
-                _safe_rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
-        with cta2:
-            st.markdown('<div class="hero-btn-secondary">', unsafe_allow_html=True)
-            st.button("ดูตัวอย่างหน้าจอ Lab", key="hero_preview", use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with right:
-        st.markdown(
-            """
-            <div class="hero-right-block">
-              <div class="hero-illust">
-                <div class="hero-illust-inner">
-                  <div class="hero-chart-line"></div>
-                </div>
-                <div class="hero-bag hero-bag-left"></div>
-                <div class="hero-bag hero-bag-right"></div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("</div>", unsafe_allow_html=True)  # ปิด landing-hero-inner
     st.markdown(
-        '<div class="landing-hero-footer">สำหรับทีมธนาคารเลือด ห้อง Lab และฝ่ายประกันคุณภาพโรงพยาบาล</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown("</div>", unsafe_allow_html=True)  # ปิด landing-card-outer
-
-    # การ์ด 2 ใบด้านล่าง
-    st.markdown(
-        """
-        <div class="landing-bottom-grid">
-          <div class="landing-bottom-card">
-            <div class="landing-bottom-title">ภาพรวมคลังเลือดในแต่ละหมู่</div>
-            <div class="landing-bottom-sub">ภาพรวมสถานะคลังเลือด A / B / O / AB ในมุมมองเดียว</div>
-            <div class="blood-overview-line">A / B / O / AB</div>
-            <div class="blood-overview-tags">
-              <div class="tag"><span class="tag-dot green"></span>เพียงพอ – ปริมาณเลือดอยู่ในช่วงปลอดภัย</div>
-              <div class="tag"><span class="tag-dot amber"></span>ใกล้หมด – ควรเตรียมสั่งเพิ่ม หรือวางแผนการใช้</div>
-              <div class="tag"><span class="tag-dot red"></span>น้อยมาก – เสี่ยงขาดสต็อก ต้องเฝ้าระวังเป็นพิเศษ</div>
-            </div>
+        f"""
+<div class="hero-wrap">
+  <div class="hero-card">
+    <div class="hero-left">
+      <div class="hero-pill">
+        🩸 Blood Stock Real-time Monitor · สำหรับธนาคารเลือด / ห้อง Lab
+      </div>
+      <div class="hero-title">
+        แดชบอร์ดคลังเลือดแบบ Real-time<br/>ช่วยดูปริมาณสำรองและวันหมดอายุได้ทันที
+      </div>
+      <div class="hero-sub">
+        ระบบสำหรับธนาคารเลือดและห้อง Lab โรงพยาบาล ช่วยติดตามสถานะทุกกรุ๊ปเลือดและผลิตภัณฑ์
+        พร้อมแจ้งเตือนวันหมดอายุ Critical / Warning ล่วงหน้า
+      </div>
+      <ul class="hero-list">
+        <li><span class="icon">✔</span><span>แสดงปริมาณเลือดแยกตามกรุ๊ปและชนิดผลิตภัณฑ์ (LPRC, PRC, FFP, PC, Cryo)</span></li>
+        <li><span class="icon">✔</span><span>รองรับไฟล์ Excel / CSV จากระบบเดิมของโรงพยาบาล</span></li>
+        <li><span class="icon">✔</span><span>ช่วยเตือนวันหมดอายุ Critical + Warning ลดโอกาสเลือดหมดอายุทิ้ง</span></li>
+      </ul>
+      <div class="hero-tagline">
+        สำหรับทีมธนาคารเลือด / ห้อง Lab · รองรับงาน Audit & ระบบคุณภาพ
+      </div>
+    </div>
+    <div class="hero-right">
+      <div class="hero-illus">
+        <div class="hero-illus-title">ภาพรวมคลังเลือดวันนี้</div>
+        <div style="font-size:.78rem;">A / B / O / AB · ดูได้ในหน้าจอเดียว</div>
+        <div class="hero-illus-chart">
+          <div class="hero-illus-line"></div>
+        </div>
+        <div class="hero-illus-bags">
+          <div class="hero-illus-bag">
+            <span>Critical</span>
+            <span style="font-size:.75rem;">ใกล้หมดอายุ ต้องรีบใช้ก่อน</span>
           </div>
-
-          <div class="landing-bottom-card">
-            <div class="landing-bottom-title">ระดับแจ้งเตือนวันหมดอายุ</div>
-            <div class="landing-bottom-sub">ช่วยมองเห็นเลือดที่ใกล้หมดอายุและวางแผนการใช้ล่วงหน้า</div>
-
-            <div class="landing-alert-row">
-              <div class="alert-label critical">Critical</div>
-              <div class="alert-text">เลือดใกล้หมดอายุมาก ควรเร่งใช้หรือตรวจสอบแนวทางจัดการ</div>
-            </div>
-            <div class="landing-alert-row">
-              <div class="alert-label warning">Warning</div>
-              <div class="alert-text">เตือนล่วงหน้าให้ทีมงานวางแผนใช้เลือดให้เหมาะสมภายในไม่กี่วัน</div>
-            </div>
+          <div class="hero-illus-bag">
+            <span>Warning</span>
+            <span style="font-size:.75rem;">เตือนล่วงหน้า 5–10 วัน</span>
           </div>
         </div>
-        """,
+      </div>
+    </div>
+  </div>
+</div>
+""",
         unsafe_allow_html=True,
     )
 
+    # ปุ่ม CTA จริงของ Streamlit
+    st.markdown('<div class="hero-cta-wrap">', unsafe_allow_html=True)
+    if st.button("เข้าสู่ระบบแดชบอร์ด", key="hero_login_btn"):
+        st.session_state["page"] = "เข้าสู่ระบบ"
+        _safe_rerun()
+    st.markdown(
+        '<div class="hero-cta-note">รองรับการใช้งานภายในเครือข่ายโรงพยาบาล · ข้อมูลไม่ถูกส่งออกนอกระบบ</div></div>',
+        unsafe_allow_html=True,
+    )
+
+    # การ์ดตัวอย่างข้อมูล 2 ใบ
+    st.markdown('<div class="info-row">', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            """
+<div class="info-card">
+  <div class="info-card-title">ภาพรวมคลังเลือดในแต่ละหมู่</div>
+  <div class="info-card-sub">ตัวอย่างข้อมูลที่ระบบสามารถช่วยให้เห็นได้อย่างรวดเร็ว</div>
+  <div class="info-bullets">
+    <div>✔ A / B / O / AB แสดงพร้อมกันในหน้าเดียว</div>
+    <div>✔ แยกตาม LPRC, PRC, FFP, PC, Cryo</div>
+    <div>✔ เหลือกี่ Unit / ใกล้หมดอายุเท่าไหร่</div>
+  </div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            """
+<div class="info-card">
+  <div class="info-card-title">ระดับแจ้งเตือนวันหมดอายุ</div>
+  <div class="info-card-sub">ช่วยให้ทีมธนาคารเลือดเห็นจุดที่ต้องรีบจัดการก่อน</div>
+  <div class="info-bullets">
+    <div><span class="info-chip"><span style="color:#b91c1c;">●</span> Critical</span> เลือดใกล้หมดอายุ ต้องรีบวางแผนใช้</div>
+    <div><span class="info-chip"><span style="color:#ea580c;">●</span> Warning</span> เตือนล่วงหน้า 5–10 วัน ก่อนถึงวันหมดอายุ</div>
+    <div><span class="info-chip"><span style="color:#16a34a;">●</span> Normal</span> สถานะปกติ พร้อมให้บริการ</div>
+  </div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------- LOGIN PAGE (การ์ดสวย ๆ) ----------
+def render_login_page():
+    st.markdown(
+        """
+<div class="login-card">
+  <div class="login-inner">
+""",
+        unsafe_allow_html=True,
+    )
+
+    col_left, col_right = st.columns([1.05, 1.0])
+
+    with col_left:
+        st.markdown(
+            """
+<div class="login-left">
+  <div>
+    <h3>ระบบบริหารคลังเลือด โรงพยาบาล</h3>
+    <p>ดูปริมาณคลังเลือดและวันหมดอายุแบบ Real-time พร้อมแจ้งเตือนให้ทีมธนาคารเลือดและห้อง Lab ตัดสินใจได้อย่างรวดเร็ว</p>
+    <ul>
+      <li>แสดงผล Real-time ตามข้อมูลที่อัปโหลด</li>
+      <li>นำเข้าไฟล์ Excel / CSV จากระบบเดิมได้ทันที</li>
+      <li>รองรับการตรวจสอบย้อนหลังสำหรับงาน Audit / QA</li>
+    </ul>
+  </div>
+  <div class="login-badge">
+    🔒 ข้อมูลเฉพาะภายในองค์กร · โปรดเก็บรหัสผ่านให้ปลอดภัย
+  </div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+    with col_right:
+        st.markdown(
+            """
+<div class="login-right">
+  <h3>เข้าสู่ระบบคลังเลือด</h3>
+  <p>Blood Stock Real-time Monitor สำหรับทีมธนาคารเลือดและห้อง Lab</p>
+""",
+            unsafe_allow_html=True,
+        )
+
+        with st.form("login_main_form", clear_on_submit=False):
+            u = st.text_input("ชื่อผู้ใช้ (Username)", key="login_user_main", placeholder="เช่น bloodbank01 หรือชื่อของคุณ")
+            p = st.text_input(
+                "รหัสผ่าน (Password)",
+                key="login_pwd_main",
+                type="password",
+                placeholder="ทดลองใช้: 1234",
+            )
+            submitted = st.form_submit_button("เข้าสู่ระบบ")
+
+        if submitted:
+            if p == AUTH_PASSWORD:
+                st.session_state["logged_in"] = True
+                st.session_state["username"] = (u or "").strip() or "staff"
+                st.session_state["page"] = "กรอกเลือด"
+                flash("เข้าสู่ระบบสำเร็จ ✅")
+                _safe_rerun()
+            else:
+                st.error("รหัสผ่านไม่ถูกต้อง (password = 1234)")
+
+        st.markdown(
+            """
+  <div class="login-footnote">
+    * เวอร์ชันทดลองใช้ ใช้รหัสผ่าน 1234 สำหรับเข้าใช้งานระบบ<br/>
+    หากคุณไม่ได้รับสิทธิ์ใช้ระบบนี้ โปรดออกจากหน้านี้และติดต่อผู้ดูแลระบบของโรงพยาบาล
+  </div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 # --------------------------------
 # SIDEBAR
@@ -986,44 +791,35 @@ with st.sidebar:
         key="nav_auth",
         use_container_width=True,
     ):
-        st.session_state["page"] = "เข้าสู่ระบบ" if not st.session_state["logged_in"] else "ออกจากระบบ"
-        _safe_rerun()
-
-    if st.session_state["page"] == "เข้าสู่ระบบ" and not st.session_state["logged_in"]:
-        st.markdown("### เข้าสู่ระบบ")
-        with st.form("login_form", clear_on_submit=False):
-            u = st.text_input("Username", key="login_user", placeholder="พิมพ์ชื่อผู้ใช้ได้เลย")
-            p = st.text_input("Password", key="login_pwd", type="password", placeholder="ใส่รหัส = 1234")
-            sub = st.form_submit_button("Login", type="primary", use_container_width=True)
-        if sub:
-            if p == AUTH_PASSWORD:
-                st.session_state["logged_in"] = True
-                st.session_state["username"] = (u or "").strip() or "staff"
-                st.session_state["page"] = "กรอกเลือด"
-                _safe_rerun()
-            else:
-                st.error("รหัสผ่านไม่ถูกต้อง (password = 1234)")
-
-    if st.session_state["page"] == "ออกจากระบบ" and st.session_state["logged_in"]:
-        st.session_state["logged_in"] = False
-        st.session_state["username"] = ""
-        st.session_state["page"] = "หน้าหลัก"
-        _safe_rerun()
+        if st.session_state["logged_in"]:
+            # logout
+            st.session_state["logged_in"] = False
+            st.session_state["username"] = ""
+            st.session_state["page"] = "หน้าหลัก"
+            flash("ออกจากระบบเรียบร้อยแล้ว", "info")
+            _safe_rerun()
+        else:
+            st.session_state["page"] = "เข้าสู่ระบบ"
+            _safe_rerun()
 
 # --------------------------------
-# FLASH (ใช้ได้ทุกหน้า)
+# HEADER
 # --------------------------------
+st.title("Blood Stock Real-time Monitor")
+st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 show_flash()
 
 # --------------------------------
-# PAGE: กรอกเลือด
+# PAGE LOGIC
 # --------------------------------
-if st.session_state["page"] == "กรอกเลือด":
-    st.title("Blood Stock Real-time Monitor")
-    st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 
+# ---------- PAGE: กรอกเลือด ----------
+if st.session_state["page"] == "กรอกเลือด":
     if not st.session_state["logged_in"]:
         st.warning("ต้องล็อกอินก่อนจึงจะใช้งานเมนูนี้ได้")
+        if st.button("ไปหน้าเข้าสู่ระบบ", key="go_login_from_entry"):
+            st.session_state["page"] = "เข้าสู่ระบบ"
+            _safe_rerun()
     else:
         st.subheader("กรอกเลือด")
 
@@ -1136,9 +932,9 @@ if st.session_state["page"] == "กรอกเลือด":
 
                         # แปลงสถานะจากอังกฤษ -> ไทย
                         status_map_en2th = {
-                            "Available": "ว่าง",  # พร้อมใช้
-                            "ReadyToIssue": "จอง",  # จอง
-                            "Released": "จ่ายแล้ว",  # จ่ายแล้ว
+                            "Available": "ว่าง",        # พร้อมใช้
+                            "ReadyToIssue": "จอง",      # จอง
+                            "Released": "จ่ายแล้ว",     # จ่ายแล้ว
                             "Expired": "Exp",
                             "ReleasedExpired": "Exp",
                             "Out": "จ่ายแล้ว",
@@ -1149,27 +945,13 @@ if st.session_state["page"] == "กรอกเลือด":
                             )
 
                         # เติมคอลัมน์ที่จำเป็น
-                        for c in [
-                            "created_at",
-                            "Exp date",
-                            "Unit number",
-                            "Group",
-                            "Blood Components",
-                            "Status",
-                            "บันทึก",
-                        ]:
+                        for c in ["created_at", "Exp date", "Unit number", "Group",
+                                  "Blood Components", "Status", "บันทึก"]:
                             if c not in df_file.columns:
                                 df_file[c] = ""
                         df_file = df_file[
-                            [
-                                "created_at",
-                                "Exp date",
-                                "Unit number",
-                                "Group",
-                                "Blood Components",
-                                "Status",
-                                "บันทึก",
-                            ]
+                            ["created_at", "Exp date", "Unit number", "Group",
+                             "Blood Components", "Status", "บันทึก"]
                         ].copy()
 
                         # คอลัมน์สถานะ(สี)
@@ -1336,19 +1118,13 @@ if st.session_state["page"] == "กรอกเลือด":
             flash("อัปเดตตารางแล้ว ✅")
             _safe_rerun()
 
-# --------------------------------
-# PAGE: หน้าหลัก
-# --------------------------------
+# ---------- PAGE: หน้าหลัก ----------
 elif st.session_state["page"] == "หน้าหลัก":
-    if not st.session_state.get("logged_in"):
-        # Landing page (ก่อนล็อกอิน) ตามดีไซน์ภาพ
+    if not st.session_state["logged_in"]:
+        # แสดง Landing page แบบสวย ๆ
         render_public_landing()
     else:
-        # Dashboard หลังล็อกอิน (ใช้โค้ดเดิม)
         auto_update_booking_to_release()
-
-        st.title("Blood Stock Real-time Monitor")
-        st.caption(f"อัปเดต: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 
         c1, c2, _ = st.columns(3)
         c1.markdown(
@@ -1402,11 +1178,7 @@ elif st.session_state["page"] == "หน้าหลัก":
         else:
             bars = alt.Chart(df_chart).mark_bar().encode(
                 x=alt.X("product_type:N", sort=ALL_PRODUCTS_UI, title="ประเภทผลิตภัณฑ์"),
-                y=alt.Y(
-                    "units:Q",
-                    title="จำนวนหน่วย (unit)",
-                    scale=alt.Scale(domainMin=0, domainMax=ymax),
-                ),
+                y=alt.Y("units:Q", title="จำนวนหน่วย (unit)", scale=alt.Scale(domainMin=0, domainMax=ymax)),
                 color=alt.Color("color:N", scale=None, legend=None),
                 tooltip=["product_type", "units"],
             )
@@ -1432,32 +1204,23 @@ elif st.session_state["page"] == "หน้าหลัก":
 
         st.markdown("### รายการบันทึกความเคลื่อนไหว (Activity Log)")
         if st.session_state["activity"]:
-            st.dataframe(
-                pd.DataFrame(st.session_state["activity"]),
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.dataframe(pd.DataFrame(st.session_state["activity"]), use_container_width=True, hide_index=True)
         else:
             st.info("ยังไม่มีรายการความเคลื่อนไหว")
 
-# --------------------------------
-# การ์ด ⚙️ จัดการระบบ  (แสดงทุกหน้า)
-# --------------------------------
-st.markdown(
-    '<div class="system-manage-card"><div class="system-manage-title">⚙️ การจัดการระบบ</div>',
-    unsafe_allow_html=True,
-)
+# ---------- PAGE: เข้าสู่ระบบ ----------
+elif st.session_state["page"] == "เข้าสู่ระบบ":
+    render_login_page()
 
+# --------------------------------
+# ปุ่มรีเซ็ตสต็อกทั้งหมด
+# --------------------------------
+st.divider()
+st.markdown("### ⚠️ จัดการระบบ")
 if st.session_state.get("logged_in"):
-    st.write(
-        "รีเซ็ตจำนวนหน่วยเลือดทั้งหมดในฐานข้อมูลให้เป็นศูนย์ "
-        "เหมาะสำหรับเริ่มต้นระบบใหม่หรือทดสอบการทำงาน (ควรใช้ด้วยความระมัดระวัง)"
-    )
     if st.button("🧹 รีเซ็ตเลือดทั้งหมดเป็นศูนย์", type="primary", use_container_width=True):
         reset_all_stock(st.session_state.get("username", "admin"))
         flash("รีเซ็ตจำนวนเลือดทั้งหมดแล้ว ✅", "warning")
         _safe_rerun()
 else:
-    st.write("ต้องเข้าสู่ระบบก่อนจึงจะใช้งานฟังก์ชันรีเซ็ตระบบได้")
-
-st.markdown("</div>", unsafe_allow_html=True)
+    st.info("ต้องเข้าสู่ระบบก่อนจึงจะใช้งานปุ่มรีเซ็ตได้")
