@@ -86,14 +86,6 @@ h1, h2, h3 {
     background: rgba(248, 113, 113, 0.08);
 }
 
-/* ปุ่มเมนูที่ active (ตอนนี้ไม่จำเป็นต้องใช้ script ก็ได้) */
-[data-testid="stSidebar"] .stButton>button[data-active="true"] {
-    background: linear-gradient(135deg,#fb7185,#f97316);
-    border-color: transparent;
-    color: #fff;
-    box-shadow: 0 10px 26px rgba(248,113,113,0.38);
-}
-
 /* ---------- Badge Legend ---------- */
 .badge {
     display: inline-flex;
@@ -329,61 +321,67 @@ h1, h2, h3 {
 }
 
 /* ---------- Login Page ---------- */
-.login-bg {
-    background: radial-gradient(circle at 50% 0%, #0f172a 0, #020617 55%, #020617 100%) !important;
+/* พื้นหลังใช้สีเทาเข้มแบบ full-screen */
+.login-page-bg {
+    background: radial-gradient(circle at 50% 0%, #111827 0, #020617 55%, #020617 100%) !important;
 }
+
+/* กล่อง login ขาวกลางจอ */
 .login-card {
-    max-width: 460px;
-    margin: 60px auto 32px auto;
-    padding: 30px 30px 26px;
-    border-radius: 26px;
-    background: radial-gradient(circle at 0% 0%, #111827 0, #020617 70%);
-    box-shadow: 0 30px 80px rgba(15,23,42,.85);
-    border: 1px solid rgba(148,163,184,.7);
+    max-width: 480px;
+    margin: 80px auto 40px auto;
+    padding: 32px 32px 26px;
+    border-radius: 30px;
+    background: #f9fafb;
+    box-shadow: 0 32px 90px rgba(15,23,42,.9);
+    border: 1px solid rgba(148,163,184,.45);
 }
 .login-title {
     text-align:center;
     font-size: 1.8rem;
     font-weight: 900;
-    color: #f9fafb;
+    color: #111827;
     margin-bottom: .2rem;
 }
 .login-subtitle {
     text-align:center;
     font-size: .9rem;
-    color: #cbd5f5;
+    color: #6b7280;
     margin-bottom: 1.3rem;
 }
 .login-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 16px;
+    width: 52px;
+    height: 52px;
+    border-radius: 18px;
     background: linear-gradient(135deg,#fb7185,#f97316);
     display:flex;
     align-items:center;
     justify-content:center;
     color:#fff;
-    font-size:1.6rem;
-    margin: 0 auto 12px auto;
+    font-size:1.8rem;
+    margin: 0 auto 10px auto;
     box-shadow: 0 18px 40px rgba(248,113,113,.55);
 }
 
 /* ฟอร์มใน login card */
 .login-card .stTextInput>div>div>input {
-    background: #020617;
+    background: #ffffff;
     border-radius: 999px;
-    border: 1px solid #475569;
-    color: #e5e7eb;
+    border: 1px solid #d1d5db;
+    color: #111827;
     padding: .55rem 1rem;
 }
+.login-card .stTextInput>div>div>input::placeholder {
+    color: #9ca3af;
+}
 .login-card .stTextInput>label>div>p {
-    color: #e5e7eb;
+    color: #111827;
     font-weight: 600;
     font-size: .86rem;
 }
 .login-note {
     font-size: .78rem;
-    color: #9ca3af;
+    color: #6b7280;
     margin: .35rem 0 1.1rem 0;
 }
 
@@ -405,12 +403,12 @@ h1, h2, h3 {
     filter: brightness(1.05);
 }
 .login-btn-ghost button {
-    background: transparent;
-    border:1px solid #64748b;
-    color:#e5e7eb;
+    background: #f9fafb;
+    border:1px solid #cbd5f5;
+    color:#111827;
 }
 .login-btn-ghost button:hover {
-    background:#020617;
+    background:#e5e7eb;
 }
 
 /* ตาราง / DataFrame */
@@ -466,15 +464,54 @@ STATUS_COLOR = {
     "หลุดจอง": "🔵 หลุดจอง",
 }
 
+# ==========================================
+# QUERY PARAMS: ใช้จำสถานะล็อกอินข้ามการกด F5
+# ==========================================
+try:
+    _raw_qp = st.query_params
+except Exception:
+    _raw_qp = st.experimental_get_query_params()
+
+if isinstance(_raw_qp, dict):
+    _auth = _raw_qp.get("auth")
+    if isinstance(_auth, list):
+        _auth = _auth[0] if _auth else None
+    URL_LOGGED = str(_auth) == "1"
+
+    _go = _raw_qp.get("go")
+    if isinstance(_go, list):
+        _go = _go[0]
+    URL_GO = _go
+else:
+    URL_LOGGED = False
+    URL_GO = None
+
+
+def set_auth_query(logged: bool):
+    """อัปเดต query parameter 'auth' เพื่อให้ล็อกอินอยู่ได้หลัง F5"""
+    try:
+        if logged:
+            st.query_params = {"auth": "1"}
+        else:
+            st.query_params = {}
+    except Exception:
+        if logged:
+            st.experimental_set_query_params(auth="1")
+        else:
+            # ล้างทุก query param
+            st.experimental_set_query_params()
+
 
 # ==========================================
 # STATE INITIALIZATION
 # ==========================================
 def _init_state():
     ss = st.session_state
-    ss.setdefault("logged_in", False)
+    # ใช้ค่าเริ่มต้นจาก URL_LOGGED เพื่อให้ F5 แล้วยังถือว่าล็อกอินอยู่
+    ss.setdefault("logged_in", URL_LOGGED)
     ss.setdefault("username", "")
-    ss.setdefault("page", "หน้าแรก")  # default หน้าแรก
+    default_page = "แดชบอร์ดคลังเลือด" if ss["logged_in"] else "หน้าแรก"
+    ss.setdefault("page", default_page)
     ss.setdefault("selected_bt", None)
     ss.setdefault("flash", None)
     ss.setdefault("last_upload_token", None)
@@ -493,42 +530,11 @@ def _init_state():
 
 _init_state()
 
-# ============ QUERY PARAMS / LOGIN PERSIST ============
-try:
-    query_params = st.query_params
-except Exception:
-    query_params = st.experimental_get_query_params()
-
-# 1) อ่านค่า auth จาก URL -> ถ้า auth=1 ให้ถือว่า login แล้ว
-auth_flag = None
-if isinstance(query_params, dict) and "auth" in query_params:
-    auth_flag = query_params.get("auth")
-    if isinstance(auth_flag, list):
-        auth_flag = auth_flag[0]
-
-if auth_flag == "1":
-    # ถ้า URL มี auth=1 ให้ล็อกอินอัตโนมัติ
-    st.session_state["logged_in"] = True
-    if not st.session_state.get("username"):
-        st.session_state["username"] = "staff"
-    # ถ้ายังอยู่หน้าแรกให้เด้งเข้าหน้าแดชบอร์ด
-    if st.session_state["page"] == "หน้าแรก":
-        st.session_state["page"] = "แดชบอร์ดคลังเลือด"
-
-# 2) ?go=login / ?go=dashboard ใช้ได้เฉพาะตอน "ยังไม่ล็อกอิน"
-if (
-    isinstance(query_params, dict)
-    and "go" in query_params
-    and not st.session_state["logged_in"]
-    and st.session_state["page"] == "หน้าแรก"
-):
-    go = query_params.get("go")
-    if isinstance(go, list):
-        go = go[0]
-    if go == "login":
-        st.session_state["page"] = "เข้าสู่ระบบ"
-    elif go == "dashboard":
-        st.session_state["page"] = "แดชบอร์ดคลังเลือด"
+# อ่าน query param จากปุ่มหน้า Landing (?go=login / ?go=dashboard)
+if URL_GO == "login":
+    st.session_state["page"] = "เข้าสู่ระบบ"
+elif URL_GO == "dashboard":
+    st.session_state["page"] = "แดชบอร์ดคลังเลือด"
 
 
 # ==========================================
@@ -853,12 +859,8 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.session_state["username"] = ""
             st.session_state["page"] = "หน้าแรก"
+            set_auth_query(False)  # ล้าง auth ออกจาก URL
             flash("ออกจากระบบแล้ว", "info")
-            # เคลียร์ query params (ลบ auth=1 ออก)
-            try:
-                st.experimental_set_query_params()
-            except Exception:
-                pass
             _safe_rerun()
 
 
@@ -919,7 +921,7 @@ if st.session_state["page"] == "หน้าแรก":
         unsafe_allow_html=True,
     )
 
-    # แถวตัวอย่างด้านล่าง
+    # แถวตัวอย่างข้อมูลด้านล่าง
     st.markdown(
         """
 <div id="examples" class="landing-info-row">
@@ -935,7 +937,7 @@ if st.session_state["page"] == "หน้าแรก":
   <div class="landing-card">
     <h3>ระดับแจ้งเตือนวันหมดอายุ</h3>
     <small>ช่วยมองเห็นถุงเลือดที่กำลังจะหมดอายุล่วงหน้า ลดการทิ้งและปรับแผนการใช้เลือด</small>
-    <ul style="list-style:none;margin:0;padding-left:0;font-size:.9rem;">
+    <ul style="list-style:none;margin:0;padding-left:0;font-size:.9rem%;">
       <li>
         <span style="color:#dc2626;font-weight:700;">Critical</span>
         <span style="margin-left:.35rem;">– เหลือวันหมดอายุน้อยมาก ควรใช้ให้หมดโดยด่วน</span>
@@ -969,7 +971,10 @@ if st.session_state["page"] == "หน้าแรก":
 # ==========================================
 elif st.session_state["page"] == "เข้าสู่ระบบ":
     # เปลี่ยนพื้นหลังให้มืดสำหรับหน้า Login
-    st.markdown('<style>body{background:#020617 !important;}</style>', unsafe_allow_html=True)
+    st.markdown(
+        '<style>body{background: radial-gradient(circle at 50% 0%, #111827 0, #020617 55%, #020617 100%) !important;}</style>',
+        unsafe_allow_html=True,
+    )
 
     col_l, col_c, col_r = st.columns([1, 1.1, 1])
     with col_c:
@@ -992,23 +997,36 @@ elif st.session_state["page"] == "เข้าสู่ระบบ":
 
         c1, c2 = st.columns(2)
         with c1:
-            login_clicked = st.button("เข้าสู่ระบบ", use_container_width=True)
+            with st.container():
+                login_clicked = st.button("เข้าสู่ระบบ", use_container_width=True, key="login_btn")
         with c2:
-            back_clicked = st.button("⬅️ กลับไปหน้าแรก", use_container_width=True)
+            with st.container():
+                back_clicked = st.button("⬅️ กลับไปหน้าแรก", use_container_width=True, key="back_btn")
 
         st.markdown("</div>", unsafe_allow_html=True)
+
+        # ทำให้ปุ่มสองตัวเข้า class login-btn-* เพื่อแต่ง CSS
+        st.markdown(
+            """
+<script>
+const root = window.parent.document;
+const btns = root.querySelectorAll('button[kind="secondary"]');
+if (btns.length >= 2) {
+  btns[btns.length-2].parentElement.classList.add("login-btn-primary");
+  btns[btns.length-1].parentElement.classList.add("login-btn-ghost");
+}
+</script>
+""",
+            unsafe_allow_html=True,
+        )
 
         if login_clicked:
             if password == AUTH_PASSWORD:
                 st.session_state["logged_in"] = True
                 st.session_state["username"] = (username or "").strip() or "staff"
                 st.session_state["page"] = "แดชบอร์ดคลังเลือด"
+                set_auth_query(True)  # ใส่ auth=1 ที่ URL → F5 แล้วไม่เด้งออก
                 flash("เข้าสู่ระบบสำเร็จ ✅", "success")
-                # ตั้ง query param auth=1 เพื่อให้ F5 ยังอยู่ใน Dashboard
-                try:
-                    st.experimental_set_query_params(auth="1")
-                except Exception:
-                    pass
                 _safe_rerun()
             else:
                 st.error("รหัสผ่านไม่ถูกต้อง (ตัวอย่าง: 1234)")
