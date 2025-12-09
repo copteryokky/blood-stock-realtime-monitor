@@ -34,7 +34,7 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-/* พื้นหลังหลัก */
+/* พื้นหลังหลัก (ใช้กับทุกหน้า ยกเว้น login จะมี override เพิ่ม) */
 body {
     background: radial-gradient(circle at 0% 0%, #ffe4e6 0, #fff1f2 28%, #fdf2f8 52%, #ffffff 100%);
     font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -321,9 +321,7 @@ h1, h2, h3 {
 }
 
 /* ---------- Login Page ---------- */
-/* (ใช้ override เพิ่มในหน้าเข้าสู่ระบบอีกที) */
-
-/* กล่องสีขาวครอบทั้งหน้าล็อกอิน */
+/* กล่องสีขาวใหญ่ครอบ login ทั้งหมด */
 .login-frame {
     max-width: 920px;
     margin: 70px auto 50px auto;
@@ -867,19 +865,23 @@ with st.sidebar:
             flash("ออกจากระบบแล้ว", "info")
             _safe_rerun()
 
+# เก็บชื่อหน้าปัจจุบันไว้ใช้ต่อ
+current_page = st.session_state["page"]
 
 # ==========================================
-# HEADER
+# HEADER (แสดงเฉพาะถ้าไม่ใช่หน้าเข้าสู่ระบบ)
 # ==========================================
-st.title("Blood Stock Real-time Monitor")
-st.caption(f"อัปเดตล่าสุด: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+if current_page != "เข้าสู่ระบบ":
+    st.title("Blood Stock Real-time Monitor")
+    st.caption(f"อัปเดตล่าสุด: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+
 show_flash()
 
 
 # ==========================================
 # PAGE: LANDING / หน้าแรก
 # ==========================================
-if st.session_state["page"] == "หน้าแรก":
+if current_page == "หน้าแรก":
     st.markdown('<div class="landing-shell">', unsafe_allow_html=True)
 
     st.markdown(
@@ -971,7 +973,7 @@ if st.session_state["page"] == "หน้าแรก":
 # ==========================================
 # PAGE: LOGIN
 # ==========================================
-elif st.session_state["page"] == "เข้าสู่ระบบ":
+elif current_page == "เข้าสู่ระบบ":
     # override พื้นหลังสำหรับหน้า Login ให้มืดทั้งจอ
     st.markdown(
         """
@@ -1054,7 +1056,7 @@ if (btns.length >= 2) {
 # ==========================================
 # PAGE: กรอกเลือด (ต้องล็อกอิน)
 # ==========================================
-elif st.session_state["page"] == "กรอกเลือด":
+elif current_page == "กรอกเลือด":
     if not st.session_state["logged_in"]:
         st.warning("ต้องเข้าสู่ระบบก่อนจึงจะใช้งานเมนูนี้ได้")
     else:
@@ -1342,7 +1344,7 @@ elif st.session_state["page"] == "กรอกเลือด":
 # ==========================================
 # PAGE: แดชบอร์ดคลังเลือด (ภาพรวม / กราฟ)
 # ==========================================
-elif st.session_state["page"] == "แดชบอร์ดคลังเลือด":
+elif current_page == "แดชบอร์ดคลังเลือด":
     auto_update_booking_to_release()
 
     c1, c2, _ = st.columns(3)
