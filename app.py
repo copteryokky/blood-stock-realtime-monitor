@@ -86,7 +86,7 @@ h1, h2, h3 {
     background: rgba(248, 113, 113, 0.08);
 }
 
-/* ปุ่มเมนูที่ active — (ตอนนี้เราคุม active ด้วย session_state/page) */
+/* ปุ่มเมนูที่ active (ตอนนี้ไม่จำเป็นต้องใช้ script ก็ได้) */
 [data-testid="stSidebar"] .stButton>button[data-active="true"] {
     background: linear-gradient(135deg,#fb7185,#f97316);
     border-color: transparent;
@@ -493,14 +493,29 @@ def _init_state():
 
 _init_state()
 
-# ====== อ่าน query param ======
+# ============ QUERY PARAMS / LOGIN PERSIST ============
 try:
     query_params = st.query_params
 except Exception:
     query_params = st.experimental_get_query_params()
 
-# *** จุดที่แก้สำคัญ ***
-# ใช้ ?go=login / ?go=dashboard เฉพาะตอนยังไม่ล็อกอิน และยังอยู่หน้าแรก
+# 1) อ่านค่า auth จาก URL -> ถ้า auth=1 ให้ถือว่า login แล้ว
+auth_flag = None
+if isinstance(query_params, dict) and "auth" in query_params:
+    auth_flag = query_params.get("auth")
+    if isinstance(auth_flag, list):
+        auth_flag = auth_flag[0]
+
+if auth_flag == "1":
+    # ถ้า URL มี auth=1 ให้ล็อกอินอัตโนมัติ
+    st.session_state["logged_in"] = True
+    if not st.session_state.get("username"):
+        st.session_state["username"] = "staff"
+    # ถ้ายังอยู่หน้าแรกให้เด้งเข้าหน้าแดชบอร์ด
+    if st.session_state["page"] == "หน้าแรก":
+        st.session_state["page"] = "แดชบอร์ดคลังเลือด"
+
+# 2) ?go=login / ?go=dashboard ใช้ได้เฉพาะตอน "ยังไม่ล็อกอิน"
 if (
     isinstance(query_params, dict)
     and "go" in query_params
@@ -839,6 +854,11 @@ with st.sidebar:
             st.session_state["username"] = ""
             st.session_state["page"] = "หน้าแรก"
             flash("ออกจากระบบแล้ว", "info")
+            # เคลียร์ query params (ลบ auth=1 ออก)
+            try:
+                st.experimental_set_query_params()
+            except Exception:
+                pass
             _safe_rerun()
 
 
@@ -984,6 +1004,11 @@ elif st.session_state["page"] == "เข้าสู่ระบบ":
                 st.session_state["username"] = (username or "").strip() or "staff"
                 st.session_state["page"] = "แดชบอร์ดคลังเลือด"
                 flash("เข้าสู่ระบบสำเร็จ ✅", "success")
+                # ตั้ง query param auth=1 เพื่อให้ F5 ยังอยู่ใน Dashboard
+                try:
+                    st.experimental_set_query_params(auth="1")
+                except Exception:
+                    pass
                 _safe_rerun()
             else:
                 st.error("รหัสผ่านไม่ถูกต้อง (ตัวอย่าง: 1234)")
