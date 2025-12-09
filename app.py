@@ -86,7 +86,7 @@ h1, h2, h3 {
     background: rgba(248, 113, 113, 0.08);
 }
 
-/* ปุ่มเมนูที่ active */
+/* ปุ่มเมนูที่ active — (ตอนนี้เราคุม active ด้วย session_state/page) */
 [data-testid="stSidebar"] .stButton>button[data-active="true"] {
     background: linear-gradient(135deg,#fb7185,#f97316);
     border-color: transparent;
@@ -493,13 +493,20 @@ def _init_state():
 
 _init_state()
 
-# อ่าน query param สำหรับปุ่มในหน้า Landing (hero HTML)
+# ====== อ่าน query param ======
 try:
     query_params = st.query_params
 except Exception:
     query_params = st.experimental_get_query_params()
 
-if isinstance(query_params, dict) and "go" in query_params:
+# *** จุดที่แก้สำคัญ ***
+# ใช้ ?go=login / ?go=dashboard เฉพาะตอนยังไม่ล็อกอิน และยังอยู่หน้าแรก
+if (
+    isinstance(query_params, dict)
+    and "go" in query_params
+    and not st.session_state["logged_in"]
+    and st.session_state["page"] == "หน้าแรก"
+):
     go = query_params.get("go")
     if isinstance(go, list):
         go = go[0]
@@ -812,22 +819,6 @@ if not os.path.exists(os.environ.get("BLOOD_DB_PATH", "blood.db")):
 with st.sidebar:
     st.markdown('<div class="sidebar-title">เมนู</div>', unsafe_allow_html=True)
 
-    def nav_button(label, page_name, key):
-        active = st.session_state["page"] == page_name
-        if st.button(label, key=key):
-            st.session_state["page"] = page_name
-            _safe_rerun()
-        # ทำ attribute data-active เพื่อให้ CSS รู้ว่าปุ่มไหน active
-        st.markdown(
-            f"""
-<script>
-const el = window.parent.document.querySelector('[data-testid="Sidebar"] button[kind="secondary"]#{key}');
-</script>
-""",
-            unsafe_allow_html=True,
-        )
-
-    # ใช้ปุ่มปกติ แต่เราจะจัด active ด้วย manual (ง่ายสุดคือใช้ key ต่างกัน)
     if st.button("หน้าแรก", key="nav_home"):
         st.session_state["page"] = "หน้าแรก"
         _safe_rerun()
@@ -865,7 +856,7 @@ show_flash()
 if st.session_state["page"] == "หน้าแรก":
     st.markdown('<div class="landing-shell">', unsafe_allow_html=True)
 
-    # Hero card (ทั้งหมดเป็น HTML + ปุ่ม <a> ที่ยิง ?go=login หรือ ?go=dashboard)
+    # Hero card
     st.markdown(
         """
 <div class="landing-hero-card">
@@ -908,7 +899,7 @@ if st.session_state["page"] == "หน้าแรก":
         unsafe_allow_html=True,
     )
 
-    # แถวตัวอย่างข้อมูลด้านล่าง
+    # แถวตัวอย่างด้านล่าง
     st.markdown(
         """
 <div id="examples" class="landing-info-row">
@@ -981,13 +972,9 @@ elif st.session_state["page"] == "เข้าสู่ระบบ":
 
         c1, c2 = st.columns(2)
         with c1:
-            login_btn = st.container()
-            with login_btn:
-                login_clicked = st.button("เข้าสู่ระบบ", use_container_width=True)
+            login_clicked = st.button("เข้าสู่ระบบ", use_container_width=True)
         with c2:
-            back_btn = st.container()
-            with back_btn:
-                back_clicked = st.button("⬅️ กลับไปหน้าแรก", use_container_width=True)
+            back_clicked = st.button("⬅️ กลับไปหน้าแรก", use_container_width=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
