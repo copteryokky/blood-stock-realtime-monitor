@@ -34,7 +34,7 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-/* พื้นหลังหลัก (ใช้กับทุกหน้า ยกเว้น login จะมี override เพิ่ม) */
+/* พื้นหลังหลัก */
 body {
     background: radial-gradient(circle at 0% 0%, #ffe4e6 0, #fff1f2 28%, #fdf2f8 52%, #ffffff 100%);
     font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -320,99 +320,82 @@ h1, h2, h3 {
     margin-bottom:.7rem;
 }
 
-/* ---------- Login Page ---------- */
-/* กล่องสีขาวใหญ่ครอบ login ทั้งหมด */
-.login-frame {
-    max-width: 920px;
-    margin: 70px auto 50px auto;
-    padding: 40px 40px 32px;
-    border-radius: 34px;
-    background: #ffffff;
-    box-shadow: 0 40px 100px rgba(15,23,42,.75);
-    border: 1px solid rgba(148,163,184,.45);
+/* ---------- Login Page (แบบกล่องสีขาวตรงกลาง) ---------- */
+
+/* container ที่เราจะเติม class login-card-box ด้วย JS */
+.login-card-box {
+    max-width: 480px;
+    margin: 80px auto 40px auto;
+    padding: 32px 32px 28px;
+    border-radius: 30px;
+    background: #f9fafb;
+    box-shadow: 0 32px 90px rgba(15,23,42,.85);
+    border: 1px solid rgba(148,163,184,.4);
 }
 
-/* กล่อง login ภายใน frame */
-.login-card {
-    max-width: 520px;
-    margin: 0 auto;
-    padding: 32px 32px 26px;
-    border-radius: 26px;
-    background: #f9fafb;
-}
+/* title / subtitle ในกล่อง */
 .login-title {
     text-align:center;
     font-size: 1.8rem;
     font-weight: 900;
     color: #111827;
-    margin-bottom: .2rem;
+    margin-bottom: .15rem;
 }
 .login-subtitle {
     text-align:center;
     font-size: .9rem;
     color: #6b7280;
-    margin-bottom: 1.3rem;
-}
-.login-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: 18px;
-    background: linear-gradient(135deg,#fb7185,#f97316);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    color:#fff;
-    font-size:1.8rem;
-    margin: 0 auto 10px auto;
-    box-shadow: 0 18px 40px rgba(248,113,113,.55);
+    margin-bottom: 1.1rem;
 }
 
-/* ฟอร์มใน login card */
-.login-card .stTextInput>div>div>input {
+/* input ในกล่อง */
+.login-card-box .stTextInput>div>div>input {
     background: #ffffff;
     border-radius: 999px;
     border: 1px solid #d1d5db;
     color: #111827;
     padding: .55rem 1rem;
 }
-.login-card .stTextInput>div>div>input::placeholder {
+.login-card-box .stTextInput>div>div>input::placeholder {
     color: #9ca3af;
 }
-.login-card .stTextInput>label>div>p {
+.login-card-box .stTextInput>label>div>p {
     color: #111827;
     font-weight: 600;
     font-size: .86rem;
 }
+
+/* note ใต้ช่อง password */
 .login-note {
     font-size: .78rem;
     color: #6b7280;
     margin: .35rem 0 1.1rem 0;
 }
 
-/* ปุ่มใน login card */
-.login-btn-primary button,
-.login-btn-ghost button {
+/* ปุ่มในกล่อง login (ใส่ class ให้ปุ่มด้วย JS) */
+button.login-btn-primary,
+button.login-btn-ghost {
     border-radius: 999px !important;
     font-weight: 700 !important;
     padding-top: .45rem !important;
     padding-bottom: .45rem !important;
 }
-.login-btn-primary button {
-    background: linear-gradient(135deg,#fb7185,#f97316);
-    border: none;
-    color: #fff;
-    box-shadow: 0 18px 42px rgba(248,113,113,.7);
+button.login-btn-primary {
+    background: linear-gradient(135deg,#fb7185,#f97316) !important;
+    border: none !important;
+    color: #fff !important;
+    box-shadow: 0 18px 42px rgba(248,113,113,.7) !important;
 }
-.login-btn-primary button:hover {
+button.login-btn-primary:hover {
     filter: brightness(1.05);
 }
-.login-btn-ghost button {
-    background: #f9fafb;
-    border:1px solid #cbd5f5;
-    color:#111827;
+button.login-btn-ghost {
+    background: #f9fafb !important;
+    border:1px solid #cbd5f5 !important;
+    color:#111827 !important;
 }
-.login-btn-ghost button:hover {
-    background:#e5e7eb;
+button.login-btn-ghost:hover {
+    background:#e5e7eb !important;
 }
 
 /* ตาราง / DataFrame */
@@ -861,19 +844,20 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.session_state["username"] = ""
             st.session_state["page"] = "หน้าแรก"
-            set_auth_query(False)
+            set_auth_query(False)  # ล้าง auth ออกจาก URL
             flash("ออกจากระบบแล้ว", "info")
             _safe_rerun()
 
-# เก็บชื่อหน้าปัจจุบันไว้ใช้ต่อ
-current_page = st.session_state["page"]
 
 # ==========================================
-# HEADER (แสดงเฉพาะถ้าไม่ใช่หน้าเข้าสู่ระบบ)
+# HEADER (ซ่อนเวลาหน้าเข้าสู่ระบบ)
 # ==========================================
-if current_page != "เข้าสู่ระบบ":
+if st.session_state["page"] != "เข้าสู่ระบบ":
     st.title("Blood Stock Real-time Monitor")
     st.caption(f"อัปเดตล่าสุด: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+else:
+    # แทนด้วยพื้นที่ว่างเล็กน้อย
+    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
 show_flash()
 
@@ -881,9 +865,10 @@ show_flash()
 # ==========================================
 # PAGE: LANDING / หน้าแรก
 # ==========================================
-if current_page == "หน้าแรก":
+if st.session_state["page"] == "หน้าแรก":
     st.markdown('<div class="landing-shell">', unsafe_allow_html=True)
 
+    # Hero card
     st.markdown(
         """
 <div class="landing-hero-card">
@@ -926,6 +911,7 @@ if current_page == "หน้าแรก":
         unsafe_allow_html=True,
     )
 
+    # แถวตัวอย่างข้อมูลด้านล่าง
     st.markdown(
         """
 <div id="examples" class="landing-info-row">
@@ -971,35 +957,35 @@ if current_page == "หน้าแรก":
 
 
 # ==========================================
-# PAGE: LOGIN
+# PAGE: LOGIN (กล่องขาวกลางจอ)
 # ==========================================
-elif current_page == "เข้าสู่ระบบ":
-    # override พื้นหลังสำหรับหน้า Login ให้มืดทั้งจอ
+elif st.session_state["page"] == "เข้าสู่ระบบ":
+    # เปลี่ยนพื้นหลังทั้งหน้าให้เป็นเทาเข้ม
     st.markdown(
         """
 <style>
-[data-testid="stAppViewContainer"]{
+body {
     background: radial-gradient(circle at 50% 0%, #111827 0, #020617 55%, #020617 100%) !important;
 }
-[data-testid="stHeader"]{ background: transparent; }
-.block-container{
-    max-width: 1100px;
-    padding-top: 2.6rem;
+.block-container {
+    max-width: 900px;
 }
 </style>
 """,
         unsafe_allow_html=True,
     )
 
-    col_l, col_c, col_r = st.columns([0.6, 1.2, 0.6])
-    with col_c:
-        # กล่องสีขาวครอบหน้า login ทั้งหมด
-        st.markdown('<div class="login-frame"><div class="login-card">', unsafe_allow_html=True)
+    # container สำหรับกล่อง login
+    login_container = st.container()
+    with login_container:
+        # marker เอาไว้ให้ JS หา container แล้วใส่ class login-card-box
+        st.markdown('<div id="login-card-marker"></div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="login-icon">+</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-title">เข้าสู่ระบบคลังเลือด</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="login-subtitle">สำหรับเจ้าหน้าที่ธนาคารเลือด / ห้อง Lab ที่ต้องการบันทึกและติดตามคลังเลือดแบบ Real-time</div>',
+            """
+<div class="login-title">เข้าสู่ระบบ</div>
+<div class="login-subtitle">Blood Stock Real-time Monitor – ระบบติดตามคลังเลือดแบบ Real-time</div>
+""",
             unsafe_allow_html=True,
         )
 
@@ -1013,50 +999,57 @@ elif current_page == "เข้าสู่ระบบ":
 
         c1, c2 = st.columns(2)
         with c1:
-            with st.container():
-                login_clicked = st.button("เข้าสู่ระบบ", use_container_width=True, key="login_btn")
+            login_clicked = st.button("เข้าสู่ระบบ", use_container_width=True, key="login_btn")
         with c2:
-            with st.container():
-                back_clicked = st.button("⬅️ กลับไปหน้าแรก", use_container_width=True, key="back_btn")
+            back_clicked = st.button("⬅️ กลับไปหน้าแรก", use_container_width=True, key="back_btn")
 
-        # ปิด login-card + login-frame
-        st.markdown("</div></div>", unsafe_allow_html=True)
-
-        # จัด class ของปุ่มให้ใช้สไตล์ login-btn-primary / login-btn-ghost
-        st.markdown(
-            """
+    # JS: ใส่ class ให้ container และปุ่ม → ให้ CSS ทำเป็นกล่องสีขาว
+    st.markdown(
+        """
 <script>
 const root = window.parent.document;
+
+// ใส่ class login-card-box ให้ vertical block ที่มี marker
+const marker = root.getElementById("login-card-marker");
+if (marker) {
+  const blk = marker.closest('div[data-testid="stVerticalBlock"]');
+  if (blk) {
+    blk.classList.add("login-card-box");
+  }
+}
+
+// หาปุ่มล่าสุด 2 ปุ่มในหน้านี้ แล้วใส่ class ปรับ style
 const btns = root.querySelectorAll('button[kind="secondary"]');
 if (btns.length >= 2) {
-  btns[btns.length-2].parentElement.classList.add("login-btn-primary");
-  btns[btns.length-1].parentElement.classList.add("login-btn-ghost");
+  btns[btns.length-2].classList.add("login-btn-primary");
+  btns[btns.length-1].classList.add("login-btn-ghost");
 }
 </script>
 """,
-            unsafe_allow_html=True,
-        )
+        unsafe_allow_html=True,
+    )
 
-        if login_clicked:
-            if password == AUTH_PASSWORD:
-                st.session_state["logged_in"] = True
-                st.session_state["username"] = (username or "").strip() or "staff"
-                st.session_state["page"] = "แดชบอร์ดคลังเลือด"
-                set_auth_query(True)  # ใส่ auth=1 ที่ URL → F5 แล้วยังอยู่
-                flash("เข้าสู่ระบบสำเร็จ ✅", "success")
-                _safe_rerun()
-            else:
-                st.error("รหัสผ่านไม่ถูกต้อง (ตัวอย่าง: 1234)")
-
-        if back_clicked:
-            st.session_state["page"] = "หน้าแรก"
+    # logic login
+    if login_clicked:
+        if password == AUTH_PASSWORD:
+            st.session_state["logged_in"] = True
+            st.session_state["username"] = (username or "").strip() or "staff"
+            st.session_state["page"] = "แดชบอร์ดคลังเลือด"
+            set_auth_query(True)  # ใส่ auth=1 ที่ URL → F5 แล้วไม่เด้งออก
+            flash("เข้าสู่ระบบสำเร็จ ✅", "success")
             _safe_rerun()
+        else:
+            st.error("รหัสผ่านไม่ถูกต้อง (ตัวอย่าง: 1234)")
+
+    if back_clicked:
+        st.session_state["page"] = "หน้าแรก"
+        _safe_rerun()
 
 
 # ==========================================
 # PAGE: กรอกเลือด (ต้องล็อกอิน)
 # ==========================================
-elif current_page == "กรอกเลือด":
+elif st.session_state["page"] == "กรอกเลือด":
     if not st.session_state["logged_in"]:
         st.warning("ต้องเข้าสู่ระบบก่อนจึงจะใช้งานเมนูนี้ได้")
     else:
@@ -1344,7 +1337,7 @@ elif current_page == "กรอกเลือด":
 # ==========================================
 # PAGE: แดชบอร์ดคลังเลือด (ภาพรวม / กราฟ)
 # ==========================================
-elif current_page == "แดชบอร์ดคลังเลือด":
+elif st.session_state["page"] == "แดชบอร์ดคลังเลือด":
     auto_update_booking_to_release()
 
     c1, c2, _ = st.columns(3)
