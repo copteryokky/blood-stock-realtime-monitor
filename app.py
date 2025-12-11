@@ -407,6 +407,79 @@ button.login-btn-ghost:hover {
     font-weight: 700;
     color: #111827;
 }
+
+/* ===== การ์ดถุงเลือด + hover bar chart ===== */
+.bag-card {
+    background: radial-gradient(circle at 50% 0%, #ffffff 0, #f9fafb 40%, #e5e7eb 100%);
+    border-radius: 26px;
+    padding: 12px 14px 14px;
+    box-shadow: 0 16px 40px rgba(15,23,42,0.18);
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+.bag-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 26px 60px rgba(15,23,42,0.30);
+}
+.bag-card-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ส่วนกราฟแท่ง – ซ่อนก่อน hover */
+.bag-card-chart {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed #e5e7eb;
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    transform: translateY(6px);
+    transition: opacity .18s ease, max-height .18s ease, transform .18s ease;
+}
+
+/* โผล่มาเมื่อ hover การ์ด */
+.bag-card:hover .bag-card-chart {
+    opacity: 1;
+    max-height: 180px;
+    transform: translateY(0);
+}
+
+.bag-card-chart-title {
+    font-size: .78rem;
+    color: #6b7280;
+    margin-bottom: 4px;
+}
+
+.bag-card-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.bag-card-bar {
+    flex: 1;
+    text-align: center;
+}
+
+.bag-card-bar-fill {
+    width: 100%;
+    border-radius: 10px 10px 4px 4px;
+    background: linear-gradient(180deg,#fecaca,#fb7185);
+    box-shadow: 0 10px 20px rgba(0,0,0,.08);
+}
+
+.bag-card-bar-value {
+    font-size: .8rem;
+    font-weight: 700;
+    color: #111827;
+    margin-top: 4px;
+}
+
+.bag-card-bar-label {
+    font-size: .76rem;
+    color: #6b7280;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -704,6 +777,60 @@ def bag_svg(blood_type: str, total: int) -> str:
             stroke="#111827" stroke-width="4"
             fill="{letter_fill}">{blood_type}</text>
     </svg>
+  </div>
+</div>
+"""
+
+
+def bag_card_with_chart(blood_type: str, total: int, dist_dict: dict) -> str:
+    """
+    การ์ด HTML ที่มี:
+      - ถุงเลือด (SVG)
+      - กราฟแท่งเล็ก ๆ ด้านล่าง (จำนวนหน่วยตามผลิตภัณฑ์)
+    """
+    order = ["LPRC", "PRC", "FFP", "PC", "Cryo"]
+    data = [(p, int(dist_dict.get(p, 0))) for p in order if int(dist_dict.get(p, 0)) > 0]
+
+    # ถ้าไม่มีข้อมูล แสดงเฉพาะถุง
+    if not data:
+        return f'<div class="bag-card"><div class="bag-card-inner">{bag_svg(blood_type, total)}</div></div>'
+
+    max_units = max(v for _, v in data)
+
+    color_map = {
+        "LPRC": "#22c55e",
+        "PRC": "#0ea5e9",
+        "FFP": "#f97316",
+        "PC": "#a855f7",
+        "Cryo": "#facc15",
+    }
+
+    bars_html = ""
+    for prod, val in data:
+        # ให้ความสูงอย่างน้อย 25% เพื่อไม่ให้แท่งเตี้ยเกินไป
+        h_pct = 25 + 70 * (val / max_units)
+        color = color_map.get(prod, "#fb7185")
+        bars_html += f"""
+        <div class="bag-card-bar">
+          <div class="bag-card-bar-fill"
+               style="height:{h_pct:.0f}%;background:linear-gradient(180deg,{color},#7f1d1d);"></div>
+          <div class="bag-card-bar-value">{val}</div>
+          <div class="bag-card-bar-label">{prod}</div>
+        </div>
+        """
+
+    svg_html = bag_svg(blood_type, total)
+
+    return f"""
+<div class="bag-card">
+  <div class="bag-card-inner">
+    {svg_html}
+  </div>
+  <div class="bag-card-chart">
+    <div class="bag-card-chart-title">จำนวนหน่วยแยกตามผลิตภัณฑ์</div>
+    <div class="bag-card-bars">
+      {bars_html}
+    </div>
   </div>
 </div>
 """
@@ -1335,7 +1462,7 @@ elif st.session_state["page"] == "กรอกเลือด":
 
 
 # ==========================================
-# PAGE: แดชบอร์ดคลังเลือด (ภาพรวม / กราฟ)
+# PAGE: แดชบอร์ดคลังเลือด (ภาพรวม / กราฟ + hover bar chart)
 # ==========================================
 elif st.session_state["page"] == "แดชบอร์ดคลังเลือด":
     auto_update_booking_to_release()
@@ -1350,17 +1477,23 @@ elif st.session_state["page"] == "แดชบอร์ดคลังเลื�
         unsafe_allow_html=True,
     )
 
+    # -------- การ์ดถุงเลือด + hover bar chart --------
     totals = totals_overview()
     blood_types = ["A", "B", "O", "AB"]
     cols = st.columns(4)
+
     for i, bt in enumerate(blood_types):
         with cols[i]:
             st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
-            st_html(bag_svg(bt, totals.get(bt, 0)), height=270, scrolling=False)
+            dist_bt = products_of(bt)
+            card_html = bag_card_with_chart(bt, totals.get(bt, 0), dist_bt)
+            st_html(card_html, height=360, scrolling=False)
+
             if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
                 st.session_state["selected_bt"] = bt
                 _safe_rerun()
 
+    # -------- รายละเอียดด้านล่าง (กราฟ Altair + ตาราง) --------
     st.divider()
     sel = st.session_state.get("selected_bt") or "A"
     st.subheader(f"รายละเอียดกรุ๊ป {sel}")
