@@ -7,7 +7,6 @@ from datetime import datetime, date, datetime as dt
 import altair as alt
 import pandas as pd
 import streamlit as st
-from pathlib import Path
 from streamlit.components.v1 import html as st_html
 
 # ------- (optional) auto refresh -------
@@ -30,7 +29,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# --------- CSS หลัก (โทนชมพู/ขาว + Sidebar มืด) ---------
+# --------- CSS หลัก (โทนชมพู/ขาว + Sidebar มืด + การ์ดถุงเลือด hover chart) ---------
 st.markdown(
     """
 <style>
@@ -410,23 +409,25 @@ button.login-btn-ghost:hover {
 
 /* ===== การ์ดถุงเลือด + hover bar chart ===== */
 .bag-card {
-    background: radial-gradient(circle at 50% 0%, #ffffff 0, #f9fafb 40%, #e5e7eb 100%);
+    position: relative;
     border-radius: 26px;
-    padding: 12px 14px 14px;
-    box-shadow: 0 16px 40px rgba(15,23,42,0.18);
+    padding: 10px 12px 14px;
+    background: radial-gradient(circle at 50% 0%, #ffffff 0, #f9fafb 45%, #e5e7eb 100%);
+    box-shadow: 0 18px 40px rgba(15,23,42,0.20);
     transition: transform .18s ease, box-shadow .18s ease;
 }
 .bag-card:hover {
     transform: translateY(-4px);
-    box-shadow: 0 26px 60px rgba(15,23,42,0.30);
+    box-shadow: 0 26px 70px rgba(15,23,42,0.40);
 }
+
 .bag-card-inner {
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-/* ส่วนกราฟแท่ง – ซ่อนก่อน hover */
+/* panel กราฟแท่ง – ปกติจะซ่อน */
 .bag-card-chart {
     margin-top: 8px;
     padding-top: 6px;
@@ -438,7 +439,7 @@ button.login-btn-ghost:hover {
     transition: opacity .18s ease, max-height .18s ease, transform .18s ease;
 }
 
-/* โผล่มาเมื่อ hover การ์ด */
+/* โผล่มาเฉพาะตอน hover การ์ด */
 .bag-card:hover .bag-card-chart {
     opacity: 1;
     max-height: 180px;
@@ -454,7 +455,7 @@ button.login-btn-ghost:hover {
 .bag-card-bars {
     display: flex;
     align-items: flex-end;
-    gap: 10px;
+    gap: 8px;
 }
 
 .bag-card-bar {
@@ -470,14 +471,14 @@ button.login-btn-ghost:hover {
 }
 
 .bag-card-bar-value {
-    font-size: .8rem;
+    font-size: .78rem;
     font-weight: 700;
     color: #111827;
-    margin-top: 4px;
+    margin-top: 3px;
 }
 
 .bag-card-bar-label {
-    font-size: .76rem;
+    font-size: .72rem;
     color: #6b7280;
 }
 </style>
@@ -784,14 +785,15 @@ def bag_svg(blood_type: str, total: int) -> str:
 
 def bag_card_with_chart(blood_type: str, total: int, dist_dict: dict) -> str:
     """
-    การ์ด HTML ที่มี:
+    การ์ด HTML:
       - ถุงเลือด (SVG)
-      - กราฟแท่งเล็ก ๆ ด้านล่าง (จำนวนหน่วยตามผลิตภัณฑ์)
+      - mini bar chart แยกตามผลิตภัณฑ์ (LPRC/PRC/FFP/PC)
+        ซ่อนอยู่จนกว่าจะ hover การ์ด
     """
-    order = ["LPRC", "PRC", "FFP", "PC", "Cryo"]
+    order = ["LPRC", "PRC", "FFP", "PC"]
     data = [(p, int(dist_dict.get(p, 0))) for p in order if int(dist_dict.get(p, 0)) > 0]
 
-    # ถ้าไม่มีข้อมูล แสดงเฉพาะถุง
+    # ไม่มีข้อมูลเลย -> แสดงเฉพาะถุง
     if not data:
         return f'<div class="bag-card"><div class="bag-card-inner">{bag_svg(blood_type, total)}</div></div>'
 
@@ -802,12 +804,11 @@ def bag_card_with_chart(blood_type: str, total: int, dist_dict: dict) -> str:
         "PRC": "#0ea5e9",
         "FFP": "#f97316",
         "PC": "#a855f7",
-        "Cryo": "#facc15",
     }
 
     bars_html = ""
     for prod, val in data:
-        # ให้ความสูงอย่างน้อย 25% เพื่อไม่ให้แท่งเตี้ยเกินไป
+        # ให้แท่งไม่เตี้ยเกินไป: 25–95% ตามสัดส่วน
         h_pct = 25 + 70 * (val / max_units)
         color = color_map.get(prod, "#fb7185")
         bars_html += f"""
@@ -1477,7 +1478,7 @@ elif st.session_state["page"] == "แดชบอร์ดคลังเลื�
         unsafe_allow_html=True,
     )
 
-    # -------- การ์ดถุงเลือด + hover bar chart --------
+    # -------- การ์ดถุงเลือด + hover mini bar chart --------
     totals = totals_overview()
     blood_types = ["A", "B", "O", "AB"]
     cols = st.columns(4)
