@@ -29,7 +29,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# --------- CSS หลัก (โทนชมพู/ขาว + Sidebar มืด + การ์ดถุงเลือด hover chart) ---------
+# --------- CSS หลัก + popup bar chart ตอน hover ถุงเลือด ---------
 st.markdown(
     """
 <style>
@@ -319,9 +319,7 @@ h1, h2, h3 {
     margin-bottom:.7rem;
 }
 
-/* ---------- Login Page (แบบกล่องสีขาวตรงกลาง) ---------- */
-
-/* container ที่เราจะเติม class login-card-box ด้วย JS */
+/* ---------- Login Page (กล่องขาวกลางจอ) ---------- */
 .login-card-box {
     max-width: 480px;
     margin: 80px auto 40px auto;
@@ -331,8 +329,6 @@ h1, h2, h3 {
     box-shadow: 0 32px 90px rgba(15,23,42,.85);
     border: 1px solid rgba(148,163,184,.4);
 }
-
-/* title / subtitle ในกล่อง */
 .login-title {
     text-align:center;
     font-size: 1.8rem;
@@ -346,8 +342,6 @@ h1, h2, h3 {
     color: #6b7280;
     margin-bottom: 1.1rem;
 }
-
-/* input ในกล่อง */
 .login-card-box .stTextInput>div>div>input {
     background: #ffffff;
     border-radius: 999px;
@@ -363,15 +357,11 @@ h1, h2, h3 {
     font-weight: 600;
     font-size: .86rem;
 }
-
-/* note ใต้ช่อง password */
 .login-note {
     font-size: .78rem;
     color: #6b7280;
     margin: .35rem 0 1.1rem 0;
 }
-
-/* ปุ่มในกล่อง login (ใส่ class ให้ปุ่มด้วย JS) */
 button.login-btn-primary,
 button.login-btn-ghost {
     border-radius: 999px !important;
@@ -407,79 +397,73 @@ button.login-btn-ghost:hover {
     color: #111827;
 }
 
-/* ===== การ์ดถุงเลือด + hover bar chart ===== */
-.bag-card {
-    position: relative;
-    border-radius: 26px;
-    padding: 10px 12px 14px;
+/* ===== การ์ดถุงเลือด + popup bar chart ตอน hover ===== */
+.bag-card{
+    position:relative;
+    display:inline-block;
+    padding:4px 4px 12px;
+    border-radius:26px;
     background: radial-gradient(circle at 50% 0%, #ffffff 0, #f9fafb 45%, #e5e7eb 100%);
-    box-shadow: 0 18px 40px rgba(15,23,42,0.20);
-    transition: transform .18s ease, box-shadow .18s ease;
+    box-shadow:0 18px 40px rgba(15,23,42,0.20);
+    transition:transform .18s ease, box-shadow .18s ease;
 }
-.bag-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 26px 70px rgba(15,23,42,0.40);
-}
-
-.bag-card-inner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.bag-card:hover{
+    transform:translateY(-4px);
+    box-shadow:0 26px 70px rgba(15,23,42,0.45);
 }
 
-/* panel กราฟแท่ง – ปกติจะซ่อน */
-.bag-card-chart {
-    margin-top: 8px;
-    padding-top: 6px;
-    border-top: 1px dashed #e5e7eb;
-    opacity: 0;
-    max-height: 0;
-    overflow: hidden;
-    transform: translateY(6px);
-    transition: opacity .18s ease, max-height .18s ease, transform .18s ease;
+/* popup ที่ลอยขึ้นมาด้านบนถุงเลือด */
+.bag-popup{
+    position:absolute;
+    left:50%;
+    bottom:220px;           /* ระยะจากฐานถุงเลือดขึ้นไป */
+    transform:translateX(-50%) translateY(8px);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .18s ease, transform .18s ease;
+    z-index:30;
+}
+.bag-card:hover .bag-popup{
+    opacity:1;
+    transform:translateX(-50%) translateY(0);
 }
 
-/* โผล่มาเฉพาะตอน hover การ์ด */
-.bag-card:hover .bag-card-chart {
-    opacity: 1;
-    max-height: 180px;
-    transform: translateY(0);
+.bag-popup-inner{
+    min-width:190px;
+    padding:10px 12px 9px;
+    border-radius:16px;
+    background:#ffffff;
+    border:1px solid #e5e7eb;
+    box-shadow:0 18px 40px rgba(15,23,42,0.45);
 }
-
-.bag-card-chart-title {
-    font-size: .78rem;
-    color: #6b7280;
-    margin-bottom: 4px;
+.bag-popup-title{
+    font-size:.78rem;
+    color:#4b5563;
+    font-weight:600;
 }
-
-.bag-card-bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
+.bag-popup-bars{
+    margin-top:6px;
+    display:flex;
+    align-items:flex-end;
+    gap:8px;
 }
-
-.bag-card-bar {
-    flex: 1;
-    text-align: center;
+.bag-popup-bar{
+    flex:1;
+    text-align:center;
 }
-
-.bag-card-bar-fill {
-    width: 100%;
-    border-radius: 10px 10px 4px 4px;
-    background: linear-gradient(180deg,#fecaca,#fb7185);
-    box-shadow: 0 10px 20px rgba(0,0,0,.08);
+.bag-popup-bar-fill{
+    width:100%;
+    border-radius:10px 10px 4px 4px;
 }
-
-.bag-card-bar-value {
-    font-size: .78rem;
-    font-weight: 700;
-    color: #111827;
-    margin-top: 3px;
+.bag-popup-bar-value{
+    font-size:.78rem;
+    font-weight:700;
+    color:#111827;
+    margin-top:3px;
 }
-
-.bag-card-bar-label {
-    font-size: .72rem;
-    color: #6b7280;
+.bag-popup-bar-label{
+    font-size:.72rem;
+    color:#6b7280;
 }
 </style>
 """,
@@ -785,20 +769,17 @@ def bag_svg(blood_type: str, total: int) -> str:
 
 def bag_card_with_chart(blood_type: str, total: int, dist_dict: dict) -> str:
     """
-    การ์ด HTML:
-      - ถุงเลือด (SVG)
-      - mini bar chart แยกตามผลิตภัณฑ์ (LPRC/PRC/FFP/PC)
-        ซ่อนอยู่จนกว่าจะ hover การ์ด
+    การ์ดถุงเลือด + popup mini bar chart
+    - เอาเมาส์ไปชี้บนการ์ด -> popup ลอยขึ้นเหนือถุงเลือด
     """
     order = ["LPRC", "PRC", "FFP", "PC"]
     data = [(p, int(dist_dict.get(p, 0))) for p in order if int(dist_dict.get(p, 0)) > 0]
 
-    # ไม่มีข้อมูลเลย -> แสดงเฉพาะถุง
+    # ถ้ายังไม่มีข้อมูลเลย แสดงเฉพาะถุง
     if not data:
-        return f'<div class="bag-card"><div class="bag-card-inner">{bag_svg(blood_type, total)}</div></div>'
+        return f'<div class="bag-card">{bag_svg(blood_type, total)}</div>'
 
     max_units = max(v for _, v in data)
-
     color_map = {
         "LPRC": "#22c55e",
         "PRC": "#0ea5e9",
@@ -808,15 +789,15 @@ def bag_card_with_chart(blood_type: str, total: int, dist_dict: dict) -> str:
 
     bars_html = ""
     for prod, val in data:
-        # ให้แท่งไม่เตี้ยเกินไป: 25–95% ตามสัดส่วน
-        h_pct = 25 + 70 * (val / max_units)
+        # ให้แท่งไม่เตี้ยเกินไป 25–90% ตามสัดส่วน
+        h_pct = 25 + 65 * (val / max_units) if max_units > 0 else 25
         color = color_map.get(prod, "#fb7185")
         bars_html += f"""
-        <div class="bag-card-bar">
-          <div class="bag-card-bar-fill"
-               style="height:{h_pct:.0f}%;background:linear-gradient(180deg,{color},#7f1d1d);"></div>
-          <div class="bag-card-bar-value">{val}</div>
-          <div class="bag-card-bar-label">{prod}</div>
+        <div class="bag-popup-bar">
+          <div class="bag-popup-bar-fill"
+               style="height:{h_pct:.0f}%;background:linear-gradient(180deg,{color},#111827);"></div>
+          <div class="bag-popup-bar-value">{val}</div>
+          <div class="bag-popup-bar-label">{prod}</div>
         </div>
         """
 
@@ -824,13 +805,13 @@ def bag_card_with_chart(blood_type: str, total: int, dist_dict: dict) -> str:
 
     return f"""
 <div class="bag-card">
-  <div class="bag-card-inner">
-    {svg_html}
-  </div>
-  <div class="bag-card-chart">
-    <div class="bag-card-chart-title">จำนวนหน่วยแยกตามผลิตภัณฑ์</div>
-    <div class="bag-card-bars">
-      {bars_html}
+  {svg_html}
+  <div class="bag-popup">
+    <div class="bag-popup-inner">
+      <div class="bag-popup-title">จำนวนหน่วยแยกตามผลิตภัณฑ์</div>
+      <div class="bag-popup-bars">
+        {bars_html}
+      </div>
     </div>
   </div>
 </div>
@@ -984,7 +965,6 @@ if st.session_state["page"] != "เข้าสู่ระบบ":
     st.title("Blood Stock Real-time Monitor")
     st.caption(f"อัปเดตล่าสุด: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 else:
-    # แทนด้วยพื้นที่ว่างเล็กน้อย
     st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
 show_flash()
@@ -996,7 +976,6 @@ show_flash()
 if st.session_state["page"] == "หน้าแรก":
     st.markdown('<div class="landing-shell">', unsafe_allow_html=True)
 
-    # Hero card
     st.markdown(
         """
 <div class="landing-hero-card">
@@ -1039,7 +1018,6 @@ if st.session_state["page"] == "หน้าแรก":
         unsafe_allow_html=True,
     )
 
-    # แถวตัวอย่างข้อมูลด้านล่าง
     st.markdown(
         """
 <div id="examples" class="landing-info-row">
@@ -1088,7 +1066,6 @@ if st.session_state["page"] == "หน้าแรก":
 # PAGE: LOGIN (กล่องขาวกลางจอ)
 # ==========================================
 elif st.session_state["page"] == "เข้าสู่ระบบ":
-    # เปลี่ยนพื้นหลังทั้งหน้าให้เป็นเทาเข้ม
     st.markdown(
         """
 <style>
@@ -1103,10 +1080,8 @@ body {
         unsafe_allow_html=True,
     )
 
-    # container สำหรับกล่อง login
     login_container = st.container()
     with login_container:
-        # marker เอาไว้ให้ JS หา container แล้วใส่ class login-card-box
         st.markdown('<div id="login-card-marker"></div>', unsafe_allow_html=True)
 
         st.markdown(
@@ -1131,13 +1106,11 @@ body {
         with c2:
             back_clicked = st.button("⬅️ กลับไปหน้าแรก", use_container_width=True, key="back_btn")
 
-    # JS: ใส่ class ให้ container และปุ่ม → ให้ CSS ทำเป็นกล่องสีขาว
     st.markdown(
         """
 <script>
 const root = window.parent.document;
 
-// ใส่ class login-card-box ให้ vertical block ที่มี marker
 const marker = root.getElementById("login-card-marker");
 if (marker) {
   const blk = marker.closest('div[data-testid="stVerticalBlock"]');
@@ -1146,7 +1119,6 @@ if (marker) {
   }
 }
 
-// หาปุ่มล่าสุด 2 ปุ่มในหน้านี้ แล้วใส่ class ปรับ style
 const btns = root.querySelectorAll('button[kind="secondary"]');
 if (btns.length >= 2) {
   btns[btns.length-2].classList.add("login-btn-primary");
@@ -1157,13 +1129,12 @@ if (btns.length >= 2) {
         unsafe_allow_html=True,
     )
 
-    # logic login
     if login_clicked:
         if password == AUTH_PASSWORD:
             st.session_state["logged_in"] = True
             st.session_state["username"] = (username or "").strip() or "staff"
             st.session_state["page"] = "แดชบอร์ดคลังเลือด"
-            set_auth_query(True)  # ใส่ auth=1 ที่ URL → F5 แล้วไม่เด้งออก
+            set_auth_query(True)
             flash("เข้าสู่ระบบสำเร็จ ✅", "success")
             _safe_rerun()
         else:
@@ -1183,7 +1154,6 @@ elif st.session_state["page"] == "กรอกเลือด":
     else:
         st.subheader("กรอกข้อมูลถุงเลือด / นำเข้าข้อมูลจากไฟล์")
 
-        # -------- ฟอร์มกรอกทีละรายการ --------
         with st.form("blood_entry_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
@@ -1235,7 +1205,6 @@ elif st.session_state["page"] == "กรอกเลือด":
                 st.error(f"ปรับคลังไม่สำเร็จ: {e}")
             _safe_rerun()
 
-        # -------- นำเข้า Excel / CSV --------
         st.markdown("### 📁 นำเข้าจาก Excel/CSV (อัปโหลดแล้วลงตารางอัตโนมัติ)")
         up = st.file_uploader("เลือกไฟล์ (.xlsx, .xls, .csv)", type=["xlsx", "xls", "csv"], key="uploader_file")
         mode_merge = st.radio(
@@ -1379,7 +1348,6 @@ elif st.session_state["page"] == "กรอกเลือด":
                 except Exception as e:
                     st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
 
-        # -------- ตารางสรุป (แก้ไขได้) --------
         st.markdown("### ตารางสรุป (แก้ไขได้)")
         df_vis = st.session_state["entries"].copy(deep=True)
 
@@ -1463,7 +1431,7 @@ elif st.session_state["page"] == "กรอกเลือด":
 
 
 # ==========================================
-# PAGE: แดชบอร์ดคลังเลือด (ภาพรวม / กราฟ + hover bar chart)
+# PAGE: แดชบอร์ดคลังเลือด (ภาพรวม + popup hover chart)
 # ==========================================
 elif st.session_state["page"] == "แดชบอร์ดคลังเลือด":
     auto_update_booking_to_release()
@@ -1478,7 +1446,6 @@ elif st.session_state["page"] == "แดชบอร์ดคลังเลื�
         unsafe_allow_html=True,
     )
 
-    # -------- การ์ดถุงเลือด + hover mini bar chart --------
     totals = totals_overview()
     blood_types = ["A", "B", "O", "AB"]
     cols = st.columns(4)
@@ -1494,7 +1461,6 @@ elif st.session_state["page"] == "แดชบอร์ดคลังเลื�
                 st.session_state["selected_bt"] = bt
                 _safe_rerun()
 
-    # -------- รายละเอียดด้านล่าง (กราฟ Altair + ตาราง) --------
     st.divider()
     sel = st.session_state.get("selected_bt") or "A"
     st.subheader(f"รายละเอียดกรุ๊ป {sel}")
