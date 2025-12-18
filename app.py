@@ -7,6 +7,7 @@ from datetime import datetime, date, datetime as dt
 import altair as alt
 import pandas as pd
 import streamlit as st
+from pathlib import Path
 from streamlit.components.v1 import html as st_html
 
 # ------- (optional) auto refresh -------
@@ -29,7 +30,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# --------- CSS หลัก + popup bar chart ตอน hover ถุงเลือด ---------
+# --------- CSS หลัก (โทนชมพู/ขาว + Sidebar มืด) ---------
 st.markdown(
     """
 <style>
@@ -319,7 +320,9 @@ h1, h2, h3 {
     margin-bottom:.7rem;
 }
 
-/* ---------- Login Page (กล่องขาวกลางจอ) ---------- */
+/* ---------- Login Page (แบบกล่องสีขาวตรงกลาง) ---------- */
+
+/* container ที่เราจะเติม class login-card-box ด้วย JS */
 .login-card-box {
     max-width: 480px;
     margin: 80px auto 40px auto;
@@ -329,6 +332,8 @@ h1, h2, h3 {
     box-shadow: 0 32px 90px rgba(15,23,42,.85);
     border: 1px solid rgba(148,163,184,.4);
 }
+
+/* title / subtitle ในกล่อง */
 .login-title {
     text-align:center;
     font-size: 1.8rem;
@@ -342,6 +347,8 @@ h1, h2, h3 {
     color: #6b7280;
     margin-bottom: 1.1rem;
 }
+
+/* input ในกล่อง */
 .login-card-box .stTextInput>div>div>input {
     background: #ffffff;
     border-radius: 999px;
@@ -357,11 +364,15 @@ h1, h2, h3 {
     font-weight: 600;
     font-size: .86rem;
 }
+
+/* note ใต้ช่อง password */
 .login-note {
     font-size: .78rem;
     color: #6b7280;
     margin: .35rem 0 1.1rem 0;
 }
+
+/* ปุ่มในกล่อง login (ใส่ class ให้ปุ่มด้วย JS) */
 button.login-btn-primary,
 button.login-btn-ghost {
     border-radius: 999px !important;
@@ -395,75 +406,6 @@ button.login-btn-ghost:hover {
     font-size: 13px;
     font-weight: 700;
     color: #111827;
-}
-
-/* ===== การ์ดถุงเลือด + popup bar chart ตอน hover ===== */
-.bag-card{
-    position:relative;
-    display:inline-block;
-    padding:4px 4px 12px;
-    border-radius:26px;
-    background: radial-gradient(circle at 50% 0%, #ffffff 0, #f9fafb 45%, #e5e7eb 100%);
-    box-shadow:0 18px 40px rgba(15,23,42,0.20);
-    transition:transform .18s ease, box-shadow .18s ease;
-}
-.bag-card:hover{
-    transform:translateY(-4px);
-    box-shadow:0 26px 70px rgba(15,23,42,0.45);
-}
-
-/* popup ที่ลอยขึ้นมาด้านบนถุงเลือด */
-.bag-popup{
-    position:absolute;
-    left:50%;
-    bottom:220px;           /* ระยะจากฐานถุงเลือดขึ้นไป */
-    transform:translateX(-50%) translateY(8px);
-    opacity:0;
-    pointer-events:none;
-    transition:opacity .18s ease, transform .18s ease;
-    z-index:30;
-}
-.bag-card:hover .bag-popup{
-    opacity:1;
-    transform:translateX(-50%) translateY(0);
-}
-
-.bag-popup-inner{
-    min-width:190px;
-    padding:10px 12px 9px;
-    border-radius:16px;
-    background:#ffffff;
-    border:1px solid #e5e7eb;
-    box-shadow:0 18px 40px rgba(15,23,42,0.45);
-}
-.bag-popup-title{
-    font-size:.78rem;
-    color:#4b5563;
-    font-weight:600;
-}
-.bag-popup-bars{
-    margin-top:6px;
-    display:flex;
-    align-items:flex-end;
-    gap:8px;
-}
-.bag-popup-bar{
-    flex:1;
-    text-align:center;
-}
-.bag-popup-bar-fill{
-    width:100%;
-    border-radius:10px 10px 4px 4px;
-}
-.bag-popup-bar-value{
-    font-size:.78rem;
-    font-weight:700;
-    color:#111827;
-    margin-top:3px;
-}
-.bag-popup-bar-label{
-    font-size:.72rem;
-    color:#6b7280;
 }
 </style>
 """,
@@ -649,6 +591,15 @@ def get_global_cryo():
     return total
 
 
+def units_color(u: int) -> str:
+    """เลือกสีแท่งกราฟตามจำนวนหน่วย"""
+    if u <= CRITICAL_MAX:
+        return "#ef4444"
+    if u <= YELLOW_MAX:
+        return "#f59e0b"
+    return "#22c55e"
+
+
 def bag_svg(blood_type: str, total: int) -> str:
     status, _label, pct = compute_bag(total, BAG_MAX)
     fill = bag_color(status)
@@ -762,57 +713,6 @@ def bag_svg(blood_type: str, total: int) -> str:
             stroke="#111827" stroke-width="4"
             fill="{letter_fill}">{blood_type}</text>
     </svg>
-  </div>
-</div>
-"""
-
-
-def bag_card_with_chart(blood_type: str, total: int, dist_dict: dict) -> str:
-    """
-    การ์ดถุงเลือด + popup mini bar chart
-    - เอาเมาส์ไปชี้บนการ์ด -> popup ลอยขึ้นเหนือถุงเลือด
-    """
-    order = ["LPRC", "PRC", "FFP", "PC"]
-    data = [(p, int(dist_dict.get(p, 0))) for p in order if int(dist_dict.get(p, 0)) > 0]
-
-    # ถ้ายังไม่มีข้อมูลเลย แสดงเฉพาะถุง
-    if not data:
-        return f'<div class="bag-card">{bag_svg(blood_type, total)}</div>'
-
-    max_units = max(v for _, v in data)
-    color_map = {
-        "LPRC": "#22c55e",
-        "PRC": "#0ea5e9",
-        "FFP": "#f97316",
-        "PC": "#a855f7",
-    }
-
-    bars_html = ""
-    for prod, val in data:
-        # ให้แท่งไม่เตี้ยเกินไป 25–90% ตามสัดส่วน
-        h_pct = 25 + 65 * (val / max_units) if max_units > 0 else 25
-        color = color_map.get(prod, "#fb7185")
-        bars_html += f"""
-        <div class="bag-popup-bar">
-          <div class="bag-popup-bar-fill"
-               style="height:{h_pct:.0f}%;background:linear-gradient(180deg,{color},#111827);"></div>
-          <div class="bag-popup-bar-value">{val}</div>
-          <div class="bag-popup-bar-label">{prod}</div>
-        </div>
-        """
-
-    svg_html = bag_svg(blood_type, total)
-
-    return f"""
-<div class="bag-card">
-  {svg_html}
-  <div class="bag-popup">
-    <div class="bag-popup-inner">
-      <div class="bag-popup-title">จำนวนหน่วยแยกตามผลิตภัณฑ์</div>
-      <div class="bag-popup-bars">
-        {bars_html}
-      </div>
-    </div>
   </div>
 </div>
 """
@@ -976,6 +876,7 @@ show_flash()
 if st.session_state["page"] == "หน้าแรก":
     st.markdown('<div class="landing-shell">', unsafe_allow_html=True)
 
+    # Hero card
     st.markdown(
         """
 <div class="landing-hero-card">
@@ -1018,6 +919,7 @@ if st.session_state["page"] == "หน้าแรก":
         unsafe_allow_html=True,
     )
 
+    # แถวตัวอย่างข้อมูลด้านล่าง
     st.markdown(
         """
 <div id="examples" class="landing-info-row">
@@ -1066,6 +968,7 @@ if st.session_state["page"] == "หน้าแรก":
 # PAGE: LOGIN (กล่องขาวกลางจอ)
 # ==========================================
 elif st.session_state["page"] == "เข้าสู่ระบบ":
+    # เปลี่ยนพื้นหลังทั้งหน้าให้เป็นเทาเข้ม
     st.markdown(
         """
 <style>
@@ -1080,6 +983,7 @@ body {
         unsafe_allow_html=True,
     )
 
+    # container สำหรับกล่อง login
     login_container = st.container()
     with login_container:
         st.markdown('<div id="login-card-marker"></div>', unsafe_allow_html=True)
@@ -1106,11 +1010,11 @@ body {
         with c2:
             back_clicked = st.button("⬅️ กลับไปหน้าแรก", use_container_width=True, key="back_btn")
 
+    # JS: ใส่ class ให้ container และปุ่ม
     st.markdown(
         """
 <script>
 const root = window.parent.document;
-
 const marker = root.getElementById("login-card-marker");
 if (marker) {
   const blk = marker.closest('div[data-testid="stVerticalBlock"]');
@@ -1118,7 +1022,6 @@ if (marker) {
     blk.classList.add("login-card-box");
   }
 }
-
 const btns = root.querySelectorAll('button[kind="secondary"]');
 if (btns.length >= 2) {
   btns[btns.length-2].classList.add("login-btn-primary");
@@ -1154,6 +1057,7 @@ elif st.session_state["page"] == "กรอกเลือด":
     else:
         st.subheader("กรอกข้อมูลถุงเลือด / นำเข้าข้อมูลจากไฟล์")
 
+        # -------- ฟอร์มกรอกทีละรายการ --------
         with st.form("blood_entry_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
@@ -1205,6 +1109,7 @@ elif st.session_state["page"] == "กรอกเลือด":
                 st.error(f"ปรับคลังไม่สำเร็จ: {e}")
             _safe_rerun()
 
+        # -------- นำเข้า Excel / CSV --------
         st.markdown("### 📁 นำเข้าจาก Excel/CSV (อัปโหลดแล้วลงตารางอัตโนมัติ)")
         up = st.file_uploader("เลือกไฟล์ (.xlsx, .xls, .csv)", type=["xlsx", "xls", "csv"], key="uploader_file")
         mode_merge = st.radio(
@@ -1348,6 +1253,7 @@ elif st.session_state["page"] == "กรอกเลือด":
                 except Exception as e:
                     st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
 
+        # -------- ตารางสรุป (แก้ไขได้) --------
         st.markdown("### ตารางสรุป (แก้ไขได้)")
         df_vis = st.session_state["entries"].copy(deep=True)
 
@@ -1431,7 +1337,7 @@ elif st.session_state["page"] == "กรอกเลือด":
 
 
 # ==========================================
-# PAGE: แดชบอร์ดคลังเลือด (ภาพรวม + popup hover chart)
+# PAGE: แดชบอร์ดคลังเลือด (ภาพรวม / กราฟ)
 # ==========================================
 elif st.session_state["page"] == "แดชบอร์ดคลังเลือด":
     auto_update_booking_to_release()
@@ -1450,17 +1356,56 @@ elif st.session_state["page"] == "แดชบอร์ดคลังเลื�
     blood_types = ["A", "B", "O", "AB"]
     cols = st.columns(4)
 
+    # ===== การ์ดถุงเลือด + กราฟแท่งเล็กใต้ถุง =====
     for i, bt in enumerate(blood_types):
         with cols[i]:
             st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
+            st_html(bag_svg(bt, totals.get(bt, 0)), height=270, scrolling=False)
+
+            # mini bar chart – จำนวนหน่วยแยกตามประเภทผลิตภัณฑ์ของกรุ๊ปนี้
             dist_bt = products_of(bt)
-            card_html = bag_card_with_chart(bt, totals.get(bt, 0), dist_bt)
-            st_html(card_html, height=360, scrolling=False)
+            dist_bt["Cryo"] = get_global_cryo()
+
+            df_small = pd.DataFrame(
+                [{"product_type": k, "units": int(v)} for k, v in dist_bt.items()]
+            )
+            df_small["product_type"] = pd.Categorical(
+                df_small["product_type"], categories=ALL_PRODUCTS_UI, ordered=True
+            )
+            df_small = df_small[df_small["units"] > 0].copy()
+
+            if df_small.empty:
+                st.caption("ยังไม่มีหน่วยเลือดในกรุ๊ปนี้")
+            else:
+                df_small["color"] = df_small["units"].apply(units_color)
+                mini_chart = (
+                    alt.Chart(df_small)
+                    .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
+                    .encode(
+                        x=alt.X(
+                            "product_type:N",
+                            sort=ALL_PRODUCTS_UI,
+                            title=None,
+                            axis=alt.Axis(labelFontSize=11),
+                        ),
+                        y=alt.Y(
+                            "units:Q",
+                            title="",
+                            scale=alt.Scale(domainMin=0),
+                        ),
+                        color=alt.Color("color:N", scale=None, legend=None),
+                        tooltip=["product_type", "units"],
+                    )
+                    .properties(height=120)
+                    .configure_view(strokeOpacity=0)
+                )
+                st.altair_chart(mini_chart, use_container_width=True)
 
             if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
                 st.session_state["selected_bt"] = bt
                 _safe_rerun()
 
+    # ===== ส่วนด้านล่าง: กราฟใหญ่ + Activity log =====
     st.divider()
     sel = st.session_state.get("selected_bt") or "A"
     st.subheader(f"รายละเอียดกรุ๊ป {sel}")
@@ -1473,15 +1418,7 @@ elif st.session_state["page"] == "แดชบอร์ดคลังเลื�
 
     df = pd.DataFrame([{"product_type": k, "units": int(v)} for k, v in dist_sel.items()])
     df["product_type"] = pd.Categorical(df["product_type"], categories=ALL_PRODUCTS_UI, ordered=True)
-
-    def color_for(u):
-        if u <= CRITICAL_MAX:
-            return "#ef4444"
-        if u <= YELLOW_MAX:
-            return "#f59e0b"
-        return "#22c55e"
-
-    df["color"] = df["units"].apply(color_for)
+    df["color"] = df["units"].apply(units_color)
 
     df_chart = df[df["units"] > 0].copy()
     ymax = max(10, int(df_chart["units"].max() * 1.25)) if not df_chart.empty else 10
