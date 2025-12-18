@@ -759,18 +759,15 @@ def mini_bar_panel_html(dist: dict) -> str:
 
 def bag_card_html(bt: str, total: int) -> str:
     """
-    การ์ดถุงเลือด + มินิกราฟแท่ง (อยู่ด้านหลังถุง)
-    ฟังก์ชันนี้จะถูกส่งเข้า st_html → รันใน iframe แยกจากหน้าใหญ่
+    การ์ดถุงเลือด + มินิกราฟแท่ง (Overlay ทับหน้าถุงเวลา hover)
     """
     bag_html = bag_svg(bt, total)
 
     # ดึงจำนวนแยกตาม product ของกรุ๊ปนั้น ๆ
     dist_bt = products_of(bt)
-    # Cryo ใช้ค่า global รวมทุกกรุ๊ป (เหมือนกราฟใหญ่)
     dist_bt["Cryo"] = get_global_cryo()
     mini_panel = mini_bar_panel_html(dist_bt)
 
-    # ใส่ CSS สำหรับการ์ด + มินิกราฟไว้ภายใน iframe เองเลย
     return f"""
 <style>
 .bag-card {{
@@ -783,26 +780,27 @@ def bag_card_html(bt: str, total: int) -> str:
 }}
 .bag-card .bag-wrap {{
     position: relative;
-    z-index: 2;
+    z-index: 1;
 }}
 .mini-bar-panel {{
     position: absolute;
     left: 50%;
-    bottom: -18px;
-    transform: translate(-50%, 8px);
+    top: 118px;  /* ให้ทับช่วงล่างของถุงเลือด */
+    transform: translateX(-50%) translateY(14px) scale(0.96);
     width: 82%;
     max-width: 210px;
-    background: rgba(255,255,255,0.96);
+    background: rgba(255,255,255,0.98);
     border-radius: 18px;
     padding: 6px 10px 8px;
-    box-shadow: 0 18px 40px rgba(15,23,42,0.18);
+    box-shadow: 0 18px 40px rgba(15,23,42,0.22);
     opacity: 0;
     pointer-events: none;
     transition: opacity .18s ease, transform .18s ease;
+    z-index: 3;
 }}
 .bag-card:hover .mini-bar-panel {{
     opacity: 1;
-    transform: translate(-50%, 0px);
+    transform: translateX(-50%) translateY(0px) scale(1);
 }}
 .mini-bar-title {{
     font-size: 0.68rem;
@@ -1003,7 +1001,6 @@ if st.session_state["page"] != "เข้าสู่ระบบ":
     st.title("Blood Stock Real-time Monitor")
     st.caption(f"อัปเดตล่าสุด: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 else:
-    # แทนด้วยพื้นที่ว่างเล็กน้อย
     st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
 show_flash()
@@ -1015,7 +1012,6 @@ show_flash()
 if st.session_state["page"] == "หน้าแรก":
     st.markdown('<div class="landing-shell">', unsafe_allow_html=True)
 
-    # Hero card
     st.markdown(
         """
 <div class="landing-hero-card">
@@ -1058,7 +1054,6 @@ if st.session_state["page"] == "หน้าแรก":
         unsafe_allow_html=True,
     )
 
-    # แถวตัวอย่างข้อมูลด้านล่าง
     st.markdown(
         """
 <div id="examples" class="landing-info-row">
@@ -1104,10 +1099,9 @@ if st.session_state["page"] == "หน้าแรก":
 
 
 # ==========================================
-# PAGE: LOGIN (กล่องขาวกลางจอ)
+# PAGE: LOGIN
 # ==========================================
 elif st.session_state["page"] == "เข้าสู่ระบบ":
-    # เปลี่ยนพื้นหลังทั้งหน้าให้เป็นเทาเข้ม
     st.markdown(
         """
 <style>
@@ -1122,10 +1116,8 @@ body {
         unsafe_allow_html=True,
     )
 
-    # container สำหรับกล่อง login
     login_container = st.container()
     with login_container:
-        # marker เอาไว้ให้ JS หา container แล้วใส่ class login-card-box
         st.markdown('<div id="login-card-marker"></div>', unsafe_allow_html=True)
 
         st.markdown(
@@ -1150,13 +1142,11 @@ body {
         with c2:
             back_clicked = st.button("⬅️ กลับไปหน้าแรก", use_container_width=True, key="back_btn")
 
-    # JS: ใส่ class ให้ container และปุ่ม → ให้ CSS ทำเป็นกล่องสีขาว
     st.markdown(
         """
 <script>
 const root = window.parent.document;
 
-// ใส่ class login-card-box ให้ vertical block ที่มี marker
 const marker = root.getElementById("login-card-marker");
 if (marker) {
   const blk = marker.closest('div[data-testid="stVerticalBlock"]');
@@ -1165,7 +1155,6 @@ if (marker) {
   }
 }
 
-// หาปุ่มล่าสุด 2 ปุ่มในหน้านี้ แล้วใส่ class ปรับ style
 const btns = root.querySelectorAll('button[kind="secondary"]');
 if (btns.length >= 2) {
   btns[btns.length-2].classList.add("login-btn-primary");
@@ -1176,13 +1165,12 @@ if (btns.length >= 2) {
         unsafe_allow_html=True,
     )
 
-    # logic login
     if login_clicked:
         if password == AUTH_PASSWORD:
             st.session_state["logged_in"] = True
             st.session_state["username"] = (username or "").strip() or "staff"
             st.session_state["page"] = "แดชบอร์ดคลังเลือด"
-            set_auth_query(True)  # ใส่ auth=1 ที่ URL → F5 แล้วไม่เด้งออก
+            set_auth_query(True)
             flash("เข้าสู่ระบบสำเร็จ ✅", "success")
             _safe_rerun()
         else:
@@ -1194,7 +1182,7 @@ if (btns.length >= 2) {
 
 
 # ==========================================
-# PAGE: กรอกเลือด (ต้องล็อกอิน)
+# PAGE: กรอกเลือด
 # ==========================================
 elif st.session_state["page"] == "กรอกเลือด":
     if not st.session_state["logged_in"]:
@@ -1202,7 +1190,6 @@ elif st.session_state["page"] == "กรอกเลือด":
     else:
         st.subheader("กรอกข้อมูลถุงเลือด / นำเข้าข้อมูลจากไฟล์")
 
-        # -------- ฟอร์มกรอกทีละรายการ --------
         with st.form("blood_entry_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
@@ -1254,7 +1241,6 @@ elif st.session_state["page"] == "กรอกเลือด":
                 st.error(f"ปรับคลังไม่สำเร็จ: {e}")
             _safe_rerun()
 
-        # -------- นำเข้า Excel / CSV --------
         st.markdown("### 📁 นำเข้าจาก Excel/CSV (อัปโหลดแล้วลงตารางอัตโนมัติ)")
         up = st.file_uploader("เลือกไฟล์ (.xlsx, .xls, .csv)", type=["xlsx", "xls", "csv"], key="uploader_file")
         mode_merge = st.radio(
@@ -1398,7 +1384,6 @@ elif st.session_state["page"] == "กรอกเลือด":
                 except Exception as e:
                     st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
 
-        # -------- ตารางสรุป (แก้ไขได้) --------
         st.markdown("### ตารางสรุป (แก้ไขได้)")
         df_vis = st.session_state["entries"].copy(deep=True)
 
@@ -1482,7 +1467,7 @@ elif st.session_state["page"] == "กรอกเลือด":
 
 
 # ==========================================
-# PAGE: แดชบอร์ดคลังเลือด (ภาพรวม / กราฟ)
+# PAGE: แดชบอร์ดคลังเลือด
 # ==========================================
 elif st.session_state["page"] == "แดชบอร์ดคลังเลือด":
     auto_update_booking_to_release()
@@ -1501,13 +1486,10 @@ elif st.session_state["page"] == "แดชบอร์ดคลังเลื�
     blood_types = ["A", "B", "O", "AB"]
     cols = st.columns(4)
 
-    # การ์ดถุงเลือด + มินิกราฟซ่อนอยู่ด้านหลัง (hover แล้วโผล่)
     for i, bt in enumerate(blood_types):
         with cols[i]:
             st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
             card_html = bag_card_html(bt, totals.get(bt, 0))
-
-            # ใช้ iframe แยก เพื่อกันไม่ให้ CSS/JS ไปรบกวน Streamlit หลัก
             st_html(card_html, height=320, scrolling=False)
 
             if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
@@ -1575,7 +1557,7 @@ elif st.session_state["page"] == "แดชบอร์ดคลังเลื�
 
 
 # ==========================================
-# ปุ่มรีเซ็ตสต็อกทั้งหมด (ด้านล่างทุกหน้า)
+# ปุ่มรีเซ็ต
 # ==========================================
 st.divider()
 st.markdown("### ⚠️ การจัดการระบบ")
