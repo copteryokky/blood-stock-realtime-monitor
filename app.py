@@ -321,8 +321,6 @@ h1, h2, h3 {
 }
 
 /* ---------- Login Page (แบบกล่องสีขาวตรงกลาง) ---------- */
-
-/* container ที่เราจะเติม class login-card-box ด้วย JS */
 .login-card-box {
     max-width: 480px;
     margin: 80px auto 40px auto;
@@ -332,8 +330,6 @@ h1, h2, h3 {
     box-shadow: 0 32px 90px rgba(15,23,42,.85);
     border: 1px solid rgba(148,163,184,.4);
 }
-
-/* title / subtitle ในกล่อง */
 .login-title {
     text-align:center;
     font-size: 1.8rem;
@@ -347,8 +343,6 @@ h1, h2, h3 {
     color: #6b7280;
     margin-bottom: 1.1rem;
 }
-
-/* input ในกล่อง */
 .login-card-box .stTextInput>div>div>input {
     background: #ffffff;
     border-radius: 999px;
@@ -364,15 +358,11 @@ h1, h2, h3 {
     font-weight: 600;
     font-size: .86rem;
 }
-
-/* note ใต้ช่อง password */
 .login-note {
     font-size: .78rem;
     color: #6b7280;
     margin: .35rem 0 1.1rem 0;
 }
-
-/* ปุ่มในกล่อง login (ใส่ class ให้ปุ่มด้วย JS) */
 button.login-btn-primary,
 button.login-btn-ghost {
     border-radius: 999px !important;
@@ -406,6 +396,81 @@ button.login-btn-ghost:hover {
     font-size: 13px;
     font-weight: 700;
     color: #111827;
+}
+
+/* ---------- การ์ดถุงเลือด + มินิกราฟแท่ง ---------- */
+.bag-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 46px;
+}
+.bag-card .bag-wrap {
+    position: relative;
+    z-index: 2;
+}
+.mini-bar-panel {
+    position: absolute;
+    left: 50%;
+    bottom: -18px;
+    transform: translate(-50%, 8px);
+    width: 82%;
+    max-width: 210px;
+    background: rgba(255,255,255,0.96);
+    border-radius: 18px;
+    padding: 6px 10px 8px;
+    box-shadow: 0 18px 40px rgba(15,23,42,0.18);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+}
+.bag-card:hover .mini-bar-panel {
+    opacity: 1;
+    transform: translate(-50%, 0px);
+}
+.mini-bar-title {
+    font-size: 0.68rem;
+    color: #4b5563;
+    text-align: center;
+    letter-spacing: .04em;
+    font-weight: 600;
+}
+.mini-bar-bars {
+    margin-top: 4px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 6px;
+}
+.mini-bar-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.mini-bar-inner-wrap {
+    width: 16px;
+    height: 56px;
+    border-radius: 999px;
+    background: #f3f4f6;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+}
+.mini-bar-inner {
+    width: 100%;
+    border-radius: 999px 999px 0 0;
+}
+.mini-bar-val {
+    margin-top: 2px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #111827;
+}
+.mini-bar-label {
+    font-size: 0.62rem;
+    color: #6b7280;
 }
 </style>
 """,
@@ -821,6 +886,62 @@ def render_minimal_banner(df):
     )
 
 
+def mini_bar_panel_html(dist_dict: dict) -> str:
+    """สร้าง HTML มินิกราฟแท่งพร้อมตัวเลข ใช้โชว์ตอน hover"""
+    # ครอบให้มีทุก product
+    dist = {p: int(dist_dict.get(p, 0)) for p in ALL_PRODUCTS_UI}
+    max_units = max(dist.values()) if dist else 0
+
+    if max_units <= 0:
+        return """
+<div class="mini-bar-panel">
+  <div class="mini-bar-title">ยังไม่มีหน่วยเลือดในกรุ๊ปนี้</div>
+</div>
+"""
+
+    bars_html = ""
+    for p in ALL_PRODUCTS_UI:
+        u = dist.get(p, 0)
+        color = units_color(u) if u > 0 else "#e5e7eb"
+        # scale ความสูง (10–100%)
+        height_pct = 10 + int(70 * (u / max_units)) if max_units > 0 and u > 0 else 0
+        bars_html += f"""
+      <div class="mini-bar-col">
+        <div class="mini-bar-inner-wrap">
+          <div class="mini-bar-inner" style="height:{height_pct}%; background:{color};"></div>
+        </div>
+        <div class="mini-bar-val">{u}</div>
+        <div class="mini-bar-label">{p}</div>
+      </div>
+"""
+
+    return f"""
+<div class="mini-bar-panel">
+  <div class="mini-bar-title">หน่วยแยกตามผลิตภัณฑ์</div>
+  <div class="mini-bar-bars">
+    {bars_html}
+  </div>
+</div>
+"""
+
+
+def bag_card_html(bt: str, total: int) -> str:
+    """การ์ดถุงเลือด + มินิกราฟแท่ง ซ่อนอยู่หลังถุง (hover แล้วโชว์)"""
+    bag_html = bag_svg(bt, total)
+
+    dist_bt = products_of(bt)
+    # Cryo ใช้รวมภาพรวม (เหมือนกราฟใหญ่)
+    dist_bt["Cryo"] = get_global_cryo()
+    mini_panel = mini_bar_panel_html(dist_bt)
+
+    return f"""
+<div class="bag-card">
+  {bag_html}
+  {mini_panel}
+</div>
+"""
+
+
 # ==========================================
 # INIT DB
 # ==========================================
@@ -968,7 +1089,6 @@ if st.session_state["page"] == "หน้าแรก":
 # PAGE: LOGIN (กล่องขาวกลางจอ)
 # ==========================================
 elif st.session_state["page"] == "เข้าสู่ระบบ":
-    # เปลี่ยนพื้นหลังทั้งหน้าให้เป็นเทาเข้ม
     st.markdown(
         """
 <style>
@@ -983,7 +1103,6 @@ body {
         unsafe_allow_html=True,
     )
 
-    # container สำหรับกล่อง login
     login_container = st.container()
     with login_container:
         st.markdown('<div id="login-card-marker"></div>', unsafe_allow_html=True)
@@ -1010,7 +1129,6 @@ body {
         with c2:
             back_clicked = st.button("⬅️ กลับไปหน้าแรก", use_container_width=True, key="back_btn")
 
-    # JS: ใส่ class ให้ container และปุ่ม
     st.markdown(
         """
 <script>
@@ -1057,7 +1175,6 @@ elif st.session_state["page"] == "กรอกเลือด":
     else:
         st.subheader("กรอกข้อมูลถุงเลือด / นำเข้าข้อมูลจากไฟล์")
 
-        # -------- ฟอร์มกรอกทีละรายการ --------
         with st.form("blood_entry_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
@@ -1109,7 +1226,6 @@ elif st.session_state["page"] == "กรอกเลือด":
                 st.error(f"ปรับคลังไม่สำเร็จ: {e}")
             _safe_rerun()
 
-        # -------- นำเข้า Excel / CSV --------
         st.markdown("### 📁 นำเข้าจาก Excel/CSV (อัปโหลดแล้วลงตารางอัตโนมัติ)")
         up = st.file_uploader("เลือกไฟล์ (.xlsx, .xls, .csv)", type=["xlsx", "xls", "csv"], key="uploader_file")
         mode_merge = st.radio(
@@ -1253,7 +1369,6 @@ elif st.session_state["page"] == "กรอกเลือด":
                 except Exception as e:
                     st.error(f"อ่านไฟล์ไม่สำเร็จ: {e}")
 
-        # -------- ตารางสรุป (แก้ไขได้) --------
         st.markdown("### ตารางสรุป (แก้ไขได้)")
         df_vis = st.session_state["entries"].copy(deep=True)
 
@@ -1356,56 +1471,17 @@ elif st.session_state["page"] == "แดชบอร์ดคลังเลื�
     blood_types = ["A", "B", "O", "AB"]
     cols = st.columns(4)
 
-    # ===== การ์ดถุงเลือด + กราฟแท่งเล็กใต้ถุง =====
+    # การ์ดถุงเลือด + มินิกราฟซ่อนอยู่ด้านหลัง (hover แล้วโผล่)
     for i, bt in enumerate(blood_types):
         with cols[i]:
             st.markdown(f"### ถุงเลือดกรุ๊ป **{bt}**")
-            st_html(bag_svg(bt, totals.get(bt, 0)), height=270, scrolling=False)
-
-            # mini bar chart – จำนวนหน่วยแยกตามประเภทผลิตภัณฑ์ของกรุ๊ปนี้
-            dist_bt = products_of(bt)
-            dist_bt["Cryo"] = get_global_cryo()
-
-            df_small = pd.DataFrame(
-                [{"product_type": k, "units": int(v)} for k, v in dist_bt.items()]
-            )
-            df_small["product_type"] = pd.Categorical(
-                df_small["product_type"], categories=ALL_PRODUCTS_UI, ordered=True
-            )
-            df_small = df_small[df_small["units"] > 0].copy()
-
-            if df_small.empty:
-                st.caption("ยังไม่มีหน่วยเลือดในกรุ๊ปนี้")
-            else:
-                df_small["color"] = df_small["units"].apply(units_color)
-                mini_chart = (
-                    alt.Chart(df_small)
-                    .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
-                    .encode(
-                        x=alt.X(
-                            "product_type:N",
-                            sort=ALL_PRODUCTS_UI,
-                            title=None,
-                            axis=alt.Axis(labelFontSize=11),
-                        ),
-                        y=alt.Y(
-                            "units:Q",
-                            title="",
-                            scale=alt.Scale(domainMin=0),
-                        ),
-                        color=alt.Color("color:N", scale=None, legend=None),
-                        tooltip=["product_type", "units"],
-                    )
-                    .properties(height=120)
-                    .configure_view(strokeOpacity=0)
-                )
-                st.altair_chart(mini_chart, use_container_width=True)
+            card_html = bag_card_html(bt, totals.get(bt, 0))
+            st.markdown(card_html, unsafe_allow_html=True)
 
             if st.button(f"ดูรายละเอียดกรุ๊ป {bt}", key=f"btn_{bt}"):
                 st.session_state["selected_bt"] = bt
                 _safe_rerun()
 
-    # ===== ส่วนด้านล่าง: กราฟใหญ่ + Activity log =====
     st.divider()
     sel = st.session_state.get("selected_bt") or "A"
     st.subheader(f"รายละเอียดกรุ๊ป {sel}")
